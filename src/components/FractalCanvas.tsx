@@ -58,8 +58,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   }, []);
 
   useEffect(() => {
-    // Predict root count
-    const numPolynomials = Math.pow(coefficients.length, degree);
+    // Predict root count (degree+1 coefficients, so degree+1 in the exponent)
+    const numPolynomials = Math.pow(coefficients.length, degree + 1);
     const estimatedRoots = numPolynomials * degree;
     
     if (estimatedRoots > maxRoots) {
@@ -74,13 +74,14 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
 
   const generatePolynomials = (degree: number, coeffs: Complex[]) => {
-    const numPolynomials = Math.pow(coeffs.length, degree);
+    // Generate degree+1 coefficients (including constant term)
+    const numPolynomials = Math.pow(coeffs.length, degree + 1);
     const polynomials: Complex[][] = [];
 
     for (let i = 0; i < numPolynomials; i++) {
       const poly: Complex[] = [];
       let temp = i;
-      for (let j = 0; j < degree; j++) {
+      for (let j = 0; j <= degree; j++) {
         poly.push(coeffs[temp % coeffs.length]);
         temp = Math.floor(temp / coeffs.length);
       }
@@ -253,7 +254,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     
     for (let i = 0; i < polynomials.length; i++) {
       const poly = polynomials[i];
-      const result = findRootsDurandKerner([{ re: 1, im: 0 }, ...poly], maxIterations);
+      // Polynomial coefficients now include the constant term
+      const result = findRootsDurandKerner(poly, maxIterations);
       
       // Only include converged roots
       if (result.converged) {
