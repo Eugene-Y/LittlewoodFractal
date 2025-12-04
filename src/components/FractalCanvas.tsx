@@ -86,22 +86,20 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   }, [degree, coefficients, maxRoots, maxIterations, canvasSize]);
 
 
-  const generatePolynomials = (degree: number, coeffs: Complex[]) => {
-    // Generate degree+1 coefficients (including constant term)
-    const numPolynomials = Math.pow(coeffs.length, degree + 1);
-    const polynomials: Complex[][] = [];
-
-    for (let i = 0; i < numPolynomials; i++) {
-      const poly: Complex[] = [];
-      let temp = i;
-      for (let j = 0; j <= degree; j++) {
-        poly.push(coeffs[temp % coeffs.length]);
-        temp = Math.floor(temp / coeffs.length);
-      }
-      polynomials.push(poly);
+  // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
+  const generatePolynomialByIndex = (index: number, degree: number, coeffs: Complex[]): Complex[] => {
+    const poly: Complex[] = [];
+    let temp = index;
+    for (let j = 0; j <= degree; j++) {
+      poly.push(coeffs[temp % coeffs.length]);
+      temp = Math.floor(temp / coeffs.length);
     }
+    return poly;
+  };
 
-    return polynomials;
+  // Calculate total number of polynomials without generating them
+  const getTotalPolynomials = (degree: number, coeffsLength: number): number => {
+    return Math.pow(coeffsLength, degree + 1);
   };
 
   const evaluatePolynomial = (coeffs: Complex[], z: Complex): Complex => {
@@ -268,13 +266,15 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Clear offscreen canvas (transparent background for roots accumulation)
     offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
-    // Generate all polynomials
-    const polynomials = generatePolynomials(degree, coefficients);
-    const totalPolynomials = polynomials.length;
+    // Calculate total polynomials without allocating memory for them
+    const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
     const totalBatches = Math.ceil(totalPolynomials / BATCH_SIZE);
 
     // Calculate theoretical total roots for consistent hue calculation
     const theoreticalTotalRoots = totalPolynomials * degree;
+
+    // Adaptive max iterations based on polynomial degree
+    const adaptiveMaxIterations = Math.min(100, Math.max(20, degree * 10));
 
     // Calculate batch skip ratio to limit total rendered roots
     const batchSkipRatio = theoreticalTotalRoots > maxRoots
@@ -304,6 +304,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   Max roots to draw: ${maxRoots.toLocaleString()}
   Skip interval: every ${skipInterval} batches
   Batches to render: ${batchesToRender.toLocaleString()} (${((batchesToRender / totalBatches) * 100).toFixed(1)}%)
+  Adaptive max iterations: ${adaptiveMaxIterations} (degree ${degree})
   Estimated time: ${estimatedTime} @ 60 FPS`);
 
     // Shared rendering state
@@ -321,11 +322,11 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     const processBatch = () => {
       if (renderingRef.current.cancelled) return;
 
-      // Skip batches based on ratio to evenly distribute across all polynomials
-      const shouldSkipBatch = batchSkipRatio > 1 && (currentBatch % skipInterval !== 0);
-
       const batchStart = currentBatch * BATCH_SIZE;
       const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
+
+      // Skip batches based on ratio to evenly distribute across all polynomials
+      const shouldSkipBatch = batchSkipRatio > 1 && (currentBatch % skipInterval !== 0);
 
       // Update progress
       currentBatch++;
@@ -335,8 +336,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       // Process batch of polynomials (or skip if ratio says so)
       if (!shouldSkipBatch) {
         for (let i = batchStart; i < batchEnd; i++) {
-          const poly = polynomials[i];
-          const result = findRootsDurandKerner(poly, maxIterations);
+          const poly = generatePolynomialByIndex(i, degree, coefficients);
+          const result = findRootsDurandKerner(poly, adaptiveMaxIterations);
 
           if (result.converged) {
             totalConverged++;
