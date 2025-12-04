@@ -75,34 +75,8 @@ const Index = () => {
   };
 
   const handleExportLink = () => {
-    const params = new URLSearchParams();
-
-    // d - degree (integer)
-    params.set('d', degree.toString());
-
-    // c - coefficient count (integer)
-    params.set('c', coefficients.length.toString());
-
-    // c1x, c1y, c2x, c2y... - coefficient coordinates (floats)
-    coefficients.forEach((coeff, i) => {
-      params.set(`c${i + 1}x`, coeff.re.toFixed(6));
-      params.set(`c${i + 1}y`, coeff.im.toFixed(6));
-    });
-
-    // max - max roots to draw (integer)
-    params.set('max', maxRoots.toString());
-
-    // t - transparency (float)
-    params.set('t', transparency.toFixed(6));
-
-    // cbw - color band width (float)
-    params.set('cbw', colorBandWidth.toFixed(6));
-
-    // bm - blend mode (integer index)
-    params.set('bm', blendModeToIndex(blendMode).toString());
-
-    // Generate full URL
-    const url = `${window.location.origin}${window.location.pathname}?${params.toString()}`;
+    // Simply copy current URL (which is auto-updated by the useEffect)
+    const url = window.location.href;
 
     // Copy to clipboard
     navigator.clipboard.writeText(url).then(() => {
@@ -214,6 +188,29 @@ const Index = () => {
       }
     }
   }, []); // Empty dependency array - run only once on mount
+
+  // Update URL when state changes
+  useEffect(() => {
+    const params = new URLSearchParams();
+
+    // Add all parameters
+    params.set('d', degree.toString());
+    params.set('c', coefficients.length.toString());
+
+    coefficients.forEach((coeff, i) => {
+      params.set(`c${i + 1}x`, coeff.re.toFixed(6));
+      params.set(`c${i + 1}y`, coeff.im.toFixed(6));
+    });
+
+    params.set('max', maxRoots.toString());
+    params.set('t', transparency.toFixed(6));
+    params.set('cbw', colorBandWidth.toFixed(6));
+    params.set('bm', blendModeToIndex(blendMode).toString());
+
+    // Update URL without reloading page or adding to history
+    const newUrl = `${window.location.pathname}?${params.toString()}`;
+    window.history.replaceState({}, '', newUrl);
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode]); // Update when any param changes
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-background">
