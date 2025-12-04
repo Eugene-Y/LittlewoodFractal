@@ -10,6 +10,8 @@ interface ControlPanelProps {
   onMaxRootsChange: (value: number) => void;
   transparency: number;
   onTransparencyChange: (value: number) => void;
+  colorBandWidth: number;
+  onColorBandWidthChange: (value: number) => void;
 }
 
 export const ControlPanel = ({
@@ -21,6 +23,8 @@ export const ControlPanel = ({
   onMaxRootsChange,
   transparency,
   onTransparencyChange,
+  colorBandWidth,
+  onColorBandWidthChange,
 }: ControlPanelProps) => {
   return (
     <div className="space-y-4">
@@ -105,6 +109,21 @@ export const ControlPanel = ({
             }
             onTransparencyChange(Math.max(0.001, Math.min(1, actualValue)));
           }}
+          className="w-full"
+        />
+      </div>
+
+      <div className="space-y-2">
+        <Label htmlFor="color-band-width-slider" className="text-sm font-normal text-foreground">
+          Color Band Width: {colorBandWidth.toFixed(2)}
+        </Label>
+        <Slider
+          id="color-band-width-slider"
+          min={0}
+          max={1}
+          step={0.01}
+          value={[colorBandWidth]}
+          onValueChange={(value) => onColorBandWidthChange(value[0])}
           className="w-full"
         />
       </div>

@@ -14,6 +14,7 @@ interface FractalCanvasProps {
   maxRoots: number;
   maxIterations: number;
   transparency: number;
+  colorBandWidth: number;
   onConvergenceStats?: (stats: ConvergenceStats) => void;
 }
 
@@ -24,7 +25,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, onConvergenceStats }: FractalCanvasProps) => {
+export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, onConvergenceStats }: FractalCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -39,11 +40,12 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
-  const previousRenderParams = useRef<{ batchesToRender: number; degree: number; coefficients: Complex[]; transparency: number; canvasSize: { width: number; height: number } }>({
+  const previousRenderParams = useRef<{ batchesToRender: number; degree: number; coefficients: Complex[]; transparency: number; colorBandWidth: number; canvasSize: { width: number; height: number } }>({
     batchesToRender: 0,
     degree: 0,
     coefficients: [],
     transparency: 0,
+    colorBandWidth: 0,
     canvasSize: { width: 0, height: 0 }
   });
   const BATCH_SIZE = 2048; // Process 2048 polynomials per frame
@@ -97,6 +99,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       prev.degree !== degree ||
       prev.coefficients !== coefficients ||
       prev.transparency !== transparency ||
+      prev.colorBandWidth !== colorBandWidth ||
       prev.canvasSize.width !== canvasSize.width ||
       prev.canvasSize.height !== canvasSize.height
     ) {
@@ -105,6 +108,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         degree,
         coefficients,
         transparency,
+        colorBandWidth,
         canvasSize: { ...canvasSize }
       };
       renderFractal();
@@ -129,6 +133,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         degree,
         coefficients,
         transparency,
+        colorBandWidth,
         canvasSize: { ...canvasSize }
       };
       renderFractal();
@@ -139,10 +144,11 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         degree,
         coefficients,
         transparency,
+        colorBandWidth,
         canvasSize: { ...canvasSize }
       };
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, canvasSize]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, canvasSize]);
 
 
   // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
@@ -429,10 +435,16 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
             // Draw roots immediately on offscreen canvas
             result.roots.forEach((root, rootIndex) => {
-              // Calculate hue based on theoretical polynomial position (not processed count)
-              // This ensures color distribution across entire spectrum regardless of skipping
+              // Calculate hue with interpolation between batch-local and global indexing
+              // colorBandWidth: 0.0 = batch size, 1.0 = total roots
               const theoreticalRootIndex = i * degree + rootIndex;
-              const hue = (theoreticalRootIndex / effectiveRootsForColor) * 360;
+              const indexWithinBatch = (i - batchStart) * degree + rootIndex;
+              const batchSize = (batchEnd - batchStart) * degree;
+
+              // Interpolate between two hue calculations
+              const hueLocal = (indexWithinBatch / batchSize) * 360; // Repeats per batch
+              const hueGlobal = (theoreticalRootIndex / effectiveRootsForColor) * 360; // Spans all roots
+              const hue = hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
 
               const x = toCanvasX(root.re);
               const y = toCanvasY(root.im);

@@ -18,6 +18,7 @@ const Index = () => {
   const [degree, setDegree] = useState(6);
   const [maxRoots, setMaxRoots] = useState(10000);
   const [transparency, setTransparency] = useState(0.9);
+  const [colorBandWidth, setColorBandWidth] = useState(1.0); // 0.0 = batch size, 1.0 = total roots
   const maxIterations = 100; // Fixed value
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
@@ -49,6 +50,7 @@ const Index = () => {
         maxRoots={maxRoots}
         maxIterations={maxIterations}
         transparency={transparency}
+        colorBandWidth={colorBandWidth}
       />
 
       {/* Overlaid Control Panel */}
@@ -62,6 +64,8 @@ const Index = () => {
           onMaxRootsChange={setMaxRoots}
           transparency={transparency}
           onTransparencyChange={setTransparency}
+          colorBandWidth={colorBandWidth}
+          onColorBandWidthChange={setColorBandWidth}
         />
       </aside>
     </div>
