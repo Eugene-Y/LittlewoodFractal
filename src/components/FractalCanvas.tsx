@@ -46,7 +46,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     transparency: 0,
     canvasSize: { width: 0, height: 0 }
   });
-  const BATCH_SIZE = 1024; // Process 1024 polynomials per frame
+  const BATCH_SIZE = 2048; // Process 2048 polynomials per frame
 
   // Fixed viewport for consistent scaling
   const VIEWPORT_SIZE = 6; // Shows from -3 to 3 on both axes
@@ -354,6 +354,12 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       ? Math.ceil(totalBatches / skipInterval)
       : totalBatches;
 
+    // Calculate effective roots for color distribution
+    // If rendering 1-2 batches, use only those roots for full color spectrum
+    const effectiveRootsForColor = batchesToRender <= 2
+      ? Math.min(batchesToRender * BATCH_SIZE, totalPolynomials) * degree
+      : theoreticalTotalRoots;
+
     // Estimate rendering time (assuming 60 FPS, each frame processes one batch)
     const estimatedSeconds = batchesToRender / 60;
     const estimatedTime = estimatedSeconds < 60
@@ -426,7 +432,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
               // Calculate hue based on theoretical polynomial position (not processed count)
               // This ensures color distribution across entire spectrum regardless of skipping
               const theoreticalRootIndex = i * degree + rootIndex;
-              const hue = (theoreticalRootIndex / theoreticalTotalRoots) * 360;
+              const hue = (theoreticalRootIndex / effectiveRootsForColor) * 360;
 
               const x = toCanvasX(root.re);
               const y = toCanvasY(root.im);
