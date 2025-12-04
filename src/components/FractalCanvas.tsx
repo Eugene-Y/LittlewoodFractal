@@ -347,18 +347,22 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Adaptive max iterations based on polynomial degree
     const adaptiveMaxIterations = Math.min(100, Math.max(20, degree * 10));
 
-    // Calculate batch skip ratio to limit total rendered roots
-    const batchSkipRatio = theoreticalTotalRoots > maxRoots
+    // Calculate polynomial skip ratio to limit total rendered roots
+    // Instead of skipping entire batches, we skip polynomials within batches
+    const polynomialSkipRatio = theoreticalTotalRoots > maxRoots
       ? theoreticalTotalRoots / maxRoots
       : 1;
 
-    // Calculate skip interval (render every Nth batch)
-    const skipInterval = Math.ceil(batchSkipRatio);
+    // Calculate skip interval for polynomials (render every Nth polynomial)
+    const polynomialSkipInterval = Math.ceil(polynomialSkipRatio);
 
-    // Calculate how many batches will actually be rendered (not skipped)
-    const batchesToRender = batchSkipRatio > 1
-      ? Math.ceil(totalBatches / skipInterval)
-      : totalBatches;
+    // All batches will be processed, but each batch will only render every Nth polynomial
+    const batchesToRender = totalBatches;
+
+    // Calculate actual polynomials to render
+    const polynomialsToRender = polynomialSkipRatio > 1
+      ? Math.ceil(totalPolynomials / polynomialSkipInterval)
+      : totalPolynomials;
 
     // Calculate effective roots for color distribution
     // If rendering fewer than 256 batches, normalize to 256 batches for better color coverage
@@ -380,8 +384,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   Total batches: ${totalBatches.toLocaleString()}
   Theoretical max roots: ${theoreticalTotalRoots.toLocaleString()}
   Max roots to draw: ${maxRoots.toLocaleString()}
-  Skip interval: every ${skipInterval} batches
-  Batches to render: ${batchesToRender.toLocaleString()} (${((batchesToRender / totalBatches) * 100).toFixed(1)}%)
+  Polynomial skip interval: every ${polynomialSkipInterval} polynomials
+  Polynomials to render: ${polynomialsToRender.toLocaleString()} (${((polynomialsToRender / totalPolynomials) * 100).toFixed(1)}%)
   Adaptive max iterations: ${adaptiveMaxIterations} (degree ${degree})
   Estimated time: ${estimatedTime} @ 60 FPS`);
 
@@ -402,21 +406,6 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       // Check if this render has been cancelled (ID changed)
       if (renderingRef.current.id !== currentRenderId) return;
 
-      // Skip batches based on ratio to evenly distribute across all polynomials
-      const shouldSkipBatch = batchSkipRatio > 1 && (currentBatch % skipInterval !== 0);
-
-      // If skipping, jump directly to next non-skipped batch
-      if (shouldSkipBatch) {
-        currentBatch = Math.ceil(currentBatch / skipInterval) * skipInterval;
-        if (currentBatch < totalBatches) {
-          renderingRef.current.animationId = requestAnimationFrame(processBatch);
-        } else {
-          setIsRendering(false);
-          setRenderProgress(100);
-        }
-        return;
-      }
-
       const batchStart = currentBatch * BATCH_SIZE;
       const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
 
@@ -425,8 +414,14 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       const progress = (currentBatch / totalBatches) * 100;
       setRenderProgress(progress);
 
-      // Process batch of polynomials
+      // Process batch of polynomials with sparse sampling
+      // Instead of processing every polynomial, skip according to polynomialSkipInterval
       for (let i = batchStart; i < batchEnd; i++) {
+          // Skip polynomials to evenly distribute across the full range
+          if (polynomialSkipRatio > 1 && (i % polynomialSkipInterval !== 0)) {
+            continue;
+          }
+
           const poly = generatePolynomialByIndex(i, degree, coefficients);
           const result = findRootsDurandKerner(poly, adaptiveMaxIterations);
 
