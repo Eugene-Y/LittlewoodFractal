@@ -56,12 +56,12 @@ export const ControlPanel = ({
         </Label>
         <Slider
           id="maxroots-slider"
-          min={0}
+          min={30}
           max={100}
           step={1}
           value={[Math.log10(maxRoots) * 10]}
           onValueChange={(value) => {
-            // Logarithmic scale: 10^4 (10k) to 10^9.7 (5B)
+            // Logarithmic scale: 10^3 (1k) to 10^9.7 (5B)
             const logValue = value[0] / 10;
             const actualValue = Math.round(Math.pow(10, logValue));
             onMaxRootsChange(actualValue);
