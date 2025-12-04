@@ -331,20 +331,31 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       // Check if this render has been cancelled (ID changed)
       if (renderingRef.current.id !== currentRenderId) return;
 
-      const batchStart = currentBatch * BATCH_SIZE;
-      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
-
       // Skip batches based on ratio to evenly distribute across all polynomials
       const shouldSkipBatch = batchSkipRatio > 1 && (currentBatch % skipInterval !== 0);
+
+      // If skipping, jump directly to next non-skipped batch
+      if (shouldSkipBatch) {
+        currentBatch = Math.ceil(currentBatch / skipInterval) * skipInterval;
+        if (currentBatch < totalBatches) {
+          renderingRef.current.animationId = requestAnimationFrame(processBatch);
+        } else {
+          setIsRendering(false);
+          setRenderProgress(100);
+        }
+        return;
+      }
+
+      const batchStart = currentBatch * BATCH_SIZE;
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
 
       // Update progress
       currentBatch++;
       const progress = (currentBatch / totalBatches) * 100;
       setRenderProgress(progress);
 
-      // Process batch of polynomials (or skip if ratio says so)
-      if (!shouldSkipBatch) {
-        for (let i = batchStart; i < batchEnd; i++) {
+      // Process batch of polynomials
+      for (let i = batchStart; i < batchEnd; i++) {
           const poly = generatePolynomialByIndex(i, degree, coefficients);
           const result = findRootsDurandKerner(poly, adaptiveMaxIterations);
 
@@ -368,11 +379,10 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
           }
         }
 
-        // Update root count and composite to main canvas only after processing
-        setRootCount(processedRoots);
-        compositeFrame(progress, frameNumber);
-        frameNumber++;
-      }
+      // Update root count and composite to main canvas only after processing
+      setRootCount(processedRoots);
+      compositeFrame(progress, frameNumber);
+      frameNumber++;
 
       // Continue or finish
       if (currentBatch < totalBatches) {
