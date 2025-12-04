@@ -26,6 +26,7 @@ interface ConvergenceStats {
 export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, onConvergenceStats }: FractalCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isRendering, setIsRendering] = useState(false);
   const [rootCount, setRootCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -42,10 +43,21 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     const updateCanvasSize = () => {
       if (containerRef.current) {
         const dpr = window.devicePixelRatio || 1;
+        const newWidth = window.innerWidth * dpr;
+        const newHeight = window.innerHeight * dpr;
+
         setCanvasSize({
-          width: window.innerWidth * dpr,
-          height: window.innerHeight * dpr
+          width: newWidth,
+          height: newHeight
         });
+
+        // Create or resize offscreen canvas for roots accumulation
+        if (!offscreenCanvasRef.current) {
+          offscreenCanvasRef.current = document.createElement('canvas');
+        }
+        offscreenCanvasRef.current.width = newWidth;
+        offscreenCanvasRef.current.height = newHeight;
+
         // Detect mobile based on screen size
         setIsMobile(window.innerWidth < 768);
       }
@@ -234,15 +246,16 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
   const renderFractal = async () => {
     const canvas = canvasRef.current;
-    if (!canvas) return;
+    const offscreenCanvas = offscreenCanvasRef.current;
+    if (!canvas || !offscreenCanvas) return;
 
     setIsRendering(true);
     const ctx = canvas.getContext("2d");
-    if (!ctx) return;
+    const offscreenCtx = offscreenCanvas.getContext("2d", { alpha: true });
+    if (!ctx || !offscreenCtx) return;
 
-    // Clear canvas
-    ctx.fillStyle = "#0a0a14";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    // Clear offscreen canvas (transparent background for roots accumulation)
+    offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
     const allRoots: Complex[] = [];
     let totalConverged = 0;
@@ -297,7 +310,30 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     const startIm = -10;
     const endIm = 10;
 
-    // Draw axes
+    // Draw roots on offscreen canvas with gradient colors
+    allRoots.forEach((root, index) => {
+      const x = toCanvasX(root.re);
+      const y = toCanvasY(root.im);
+
+      const hue = (index / allRoots.length) * 360;
+      const gradient = offscreenCtx.createRadialGradient(x, y, 0, x, y, 3);
+      gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
+      gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.2)`);
+
+      offscreenCtx.fillStyle = gradient;
+      offscreenCtx.beginPath();
+      offscreenCtx.arc(x, y, 2, 0, 2 * Math.PI);
+      offscreenCtx.fill();
+    });
+
+    // Composite: Clear main canvas and draw background
+    ctx.fillStyle = "#0a0a14";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw accumulated roots from offscreen canvas
+    ctx.drawImage(offscreenCanvas, 0, 0);
+
+    // Draw axes on main canvas
     ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
     ctx.lineWidth = 2;
     ctx.beginPath();
@@ -307,7 +343,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     ctx.lineTo(canvas.width, toCanvasY(0));
     ctx.stroke();
 
-    // Draw tickmarks and labels
+    // Draw tickmarks and labels on main canvas
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
     ctx.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
     ctx.textAlign = "center";
@@ -326,7 +362,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         ctx.moveTo(x, y0 - 5);
         ctx.lineTo(x, y0 + 5);
         ctx.stroke();
-        
+
         // Label
         const label = re.toString();
         const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
@@ -349,7 +385,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         ctx.moveTo(x0 - 5, y);
         ctx.lineTo(x0 + 5, y);
         ctx.stroke();
-        
+
         // Label
         const label = im.toString() + "i";
         const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
@@ -357,23 +393,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       }
     }
 
-    // Draw roots with gradient colors
-    allRoots.forEach((root, index) => {
-      const x = toCanvasX(root.re);
-      const y = toCanvasY(root.im);
-
-      const hue = (index / allRoots.length) * 360;
-      const gradient = ctx.createRadialGradient(x, y, 0, x, y, 3);
-      gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
-      gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.2)`);
-
-      ctx.fillStyle = gradient;
-      ctx.beginPath();
-      ctx.arc(x, y, 2, 0, 2 * Math.PI);
-      ctx.fill();
-    });
-
-    // Draw coefficient dots as white rings (responsive sizing)
+    // Draw coefficient dots as white rings on main canvas (responsive sizing)
     const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
     
     coefficients.forEach((coeff, index) => {
