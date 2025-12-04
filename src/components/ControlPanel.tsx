@@ -35,14 +35,14 @@ export const ControlPanel = ({
   return (
     <Tabs defaultValue="polynomial" className="w-full">
       <TabsList className="w-full bg-background/50 backdrop-blur-sm">
-        <TabsTrigger value="polynomial" className="flex-1">Polynomial</TabsTrigger>
-        <TabsTrigger value="style" className="flex-1">Style</TabsTrigger>
+        <TabsTrigger value="polynomial" className="flex-1">POLYNOMIAL</TabsTrigger>
+        <TabsTrigger value="style" className="flex-1">STYLE</TabsTrigger>
       </TabsList>
 
       <TabsContent value="polynomial" className="space-y-4 mt-4">
       <div className="space-y-2">
         <Label htmlFor="degree-slider" className="text-sm font-normal text-foreground">
-          Polynomial Degree: {degree}
+          Degree: {degree}
         </Label>
         <Slider
           id="degree-slider"
