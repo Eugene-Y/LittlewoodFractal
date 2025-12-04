@@ -270,6 +270,9 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Set composite operation to properly blend semi-transparent pixels
     offscreenCtx.globalCompositeOperation = 'source-over';
 
+    // Disable antialiasing for better performance
+    offscreenCtx.imageSmoothingEnabled = false;
+
     // Calculate total polynomials without allocating memory for them
     const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
     const totalBatches = Math.ceil(totalPolynomials / BATCH_SIZE);
@@ -358,9 +361,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
               // Simple solid color rendering (most performant)
               offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
-              offscreenCtx.beginPath();
-              offscreenCtx.arc(x, y, 1.5, 0, 2 * Math.PI);
-              offscreenCtx.fill();
+              offscreenCtx.fillRect(x - 1, y - 1, 2, 2);
             });
           }
         }
