@@ -38,7 +38,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
-  const renderingRef = useRef<{ cancelled: boolean; animationId?: number }>({ cancelled: false });
+  const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
   const BATCH_SIZE = 1024; // Process 1024 polynomials per frame
 
   // Fixed viewport for consistent scaling
@@ -249,14 +249,14 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     const offscreenCanvas = offscreenCanvasRef.current;
     if (!canvas || !offscreenCanvas) return;
 
-    // Cancel any ongoing render
+    // Cancel any ongoing render by incrementing ID
     if (renderingRef.current.animationId) {
       cancelAnimationFrame(renderingRef.current.animationId);
     }
-    renderingRef.current.cancelled = true;
 
-    // Start new render
-    renderingRef.current = { cancelled: false };
+    // Start new render with unique ID
+    const currentRenderId = renderingRef.current.id + 1;
+    renderingRef.current = { id: currentRenderId };
     setIsRendering(true);
     setRenderProgress(0);
 
@@ -319,6 +319,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     let totalConverged = 0;
     let totalIterations = 0;
     let processedRoots = 0;
+    let frameNumber = 0;
 
     // Equal scale for both axes
     const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
@@ -327,7 +328,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
     // Batch processing function
     const processBatch = () => {
-      if (renderingRef.current.cancelled) return;
+      // Check if this render has been cancelled (ID changed)
+      if (renderingRef.current.id !== currentRenderId) return;
 
       const batchStart = currentBatch * BATCH_SIZE;
       const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
@@ -368,7 +370,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
         // Update root count and composite to main canvas only after processing
         setRootCount(processedRoots);
-        compositeFrame(progress);
+        compositeFrame(progress, frameNumber);
+        frameNumber++;
       }
 
       // Continue or finish
@@ -394,7 +397,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     };
 
     // Helper to composite offscreen canvas + UI to main canvas
-    const compositeFrame = (currentProgress: number) => {
+    const compositeFrame = (currentProgress: number, frame: number) => {
       if (!ctx || !canvas) return;
 
       // Integer ticks only, extended range
@@ -500,7 +503,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         ctx.font = `${14 * dpr}px monospace`;
         ctx.textAlign = "right";
         ctx.textBaseline = "bottom";
-        ctx.fillText(`${currentProgress.toFixed(1)}%`, canvas.width - padding, canvas.height - padding);
+        ctx.fillText(`Frame ${frame} - ${currentProgress.toFixed(3)}%`, canvas.width - padding, canvas.height - padding);
       }
     };
 
