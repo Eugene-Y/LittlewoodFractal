@@ -281,6 +281,31 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       ? theoreticalTotalRoots / maxRoots
       : 1;
 
+    // Calculate skip interval (render every Nth batch)
+    const skipInterval = Math.ceil(batchSkipRatio);
+
+    // Calculate how many batches will actually be rendered (not skipped)
+    const batchesToRender = batchSkipRatio > 1
+      ? Math.ceil(totalBatches / skipInterval)
+      : totalBatches;
+
+    // Estimate rendering time (assuming 60 FPS, each frame processes one batch)
+    const estimatedSeconds = batchesToRender / 60;
+    const estimatedTime = estimatedSeconds < 60
+      ? `${estimatedSeconds.toFixed(1)}s`
+      : `${(estimatedSeconds / 60).toFixed(1)}m`;
+
+    // Log rendering info once at the start
+    console.log(`[Fractal Render Start]
+  Batch size: ${BATCH_SIZE.toLocaleString()} polynomials
+  Total polynomials: ${totalPolynomials.toLocaleString()}
+  Total batches: ${totalBatches.toLocaleString()}
+  Theoretical max roots: ${theoreticalTotalRoots.toLocaleString()}
+  Max roots to draw: ${maxRoots.toLocaleString()}
+  Skip interval: every ${skipInterval} batches
+  Batches to render: ${batchesToRender.toLocaleString()} (${((batchesToRender / totalBatches) * 100).toFixed(1)}%)
+  Estimated time: ${estimatedTime} @ 60 FPS`);
+
     // Shared rendering state
     let currentBatch = 0;
     let totalConverged = 0;
@@ -297,7 +322,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       if (renderingRef.current.cancelled) return;
 
       // Skip batches based on ratio to evenly distribute across all polynomials
-      const shouldSkipBatch = batchSkipRatio > 1 && (currentBatch % Math.ceil(batchSkipRatio) !== 0);
+      const shouldSkipBatch = batchSkipRatio > 1 && (currentBatch % skipInterval !== 0);
 
       const batchStart = currentBatch * BATCH_SIZE;
       const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
@@ -306,11 +331,6 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       currentBatch++;
       const progress = (currentBatch / totalBatches) * 100;
       setRenderProgress(progress);
-
-      // Log batch progress
-      const batchSize = batchEnd - batchStart;
-      const skippedStatus = shouldSkipBatch ? ' (SKIPPED)' : '';
-      console.log(`[Batch ${currentBatch}/${totalBatches}] ${batchSize} polynomials, ${processedRoots} total roots, ${progress.toFixed(1)}% complete${skippedStatus}`);
 
       // Process batch of polynomials (or skip if ratio says so)
       if (!shouldSkipBatch) {

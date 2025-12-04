@@ -52,15 +52,20 @@ export const ControlPanel = ({
 
       <div className="space-y-3">
         <Label htmlFor="maxroots-slider" className="text-sm font-medium text-foreground">
-          Max Roots: {maxRoots.toLocaleString()}
+          Max Roots To Draw: {maxRoots.toLocaleString()}
         </Label>
         <Slider
           id="maxroots-slider"
-          min={10000}
-          max={5000000}
-          step={10000}
-          value={[maxRoots]}
-          onValueChange={(value) => onMaxRootsChange(value[0])}
+          min={0}
+          max={100}
+          step={1}
+          value={[Math.log10(maxRoots) * 10]}
+          onValueChange={(value) => {
+            // Logarithmic scale: 10^4 (10k) to 10^9.7 (5B)
+            const logValue = value[0] / 10;
+            const actualValue = Math.round(Math.pow(10, logValue));
+            onMaxRootsChange(actualValue);
+          }}
           className="w-full"
         />
       </div>
