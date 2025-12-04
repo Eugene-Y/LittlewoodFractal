@@ -40,8 +40,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
-  const previousRenderParams = useRef<{ batchesToRender: number; degree: number; coefficients: Complex[]; transparency: number; colorBandWidth: number; canvasSize: { width: number; height: number } }>({
-    batchesToRender: 0,
+  const previousRenderParams = useRef<{ framesToRender: number; degree: number; coefficients: Complex[]; transparency: number; colorBandWidth: number; canvasSize: { width: number; height: number } }>({
+    framesToRender: 0,
     degree: 0,
     coefficients: [],
     transparency: 0,
@@ -104,7 +104,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       prev.canvasSize.height !== canvasSize.height
     ) {
       previousRenderParams.current = {
-        batchesToRender: 0, // Will be recalculated
+        framesToRender: 0, // Will be recalculated
         degree,
         coefficients,
         transparency,
@@ -115,21 +115,21 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       return;
     }
 
-    // For maxRoots changes: only re-render if batchesToRender actually changed
+    // For maxRoots changes: only re-render if framesToRender actually changed
     const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
-    const totalBatches = Math.ceil(totalPolynomials / BATCH_SIZE);
     const theoreticalTotalRoots = totalPolynomials * degree;
-    const batchSkipRatio = theoreticalTotalRoots > maxRoots
+    const skipRatio = theoreticalTotalRoots > maxRoots
       ? theoreticalTotalRoots / maxRoots
       : 1;
-    const skipInterval = Math.ceil(batchSkipRatio);
-    const batchesToRender = batchSkipRatio > 1
-      ? Math.ceil(totalBatches / skipInterval)
-      : totalBatches;
+    const skipInterval = Math.ceil(skipRatio);
+    const polynomialsToRender = skipRatio > 1
+      ? Math.ceil(totalPolynomials / skipInterval)
+      : totalPolynomials;
+    const framesToRender = Math.ceil(polynomialsToRender / BATCH_SIZE);
 
-    if (prev.batchesToRender !== batchesToRender) {
+    if (prev.framesToRender !== framesToRender) {
       previousRenderParams.current = {
-        batchesToRender,
+        framesToRender,
         degree,
         coefficients,
         transparency,
@@ -140,7 +140,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     } else {
       // Update ref even if not re-rendering
       previousRenderParams.current = {
-        batchesToRender,
+        framesToRender,
         degree,
         coefficients,
         transparency,
@@ -339,7 +339,6 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
     // Calculate total polynomials without allocating memory for them
     const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
-    const totalBatches = Math.ceil(totalPolynomials / BATCH_SIZE);
 
     // Calculate theoretical total roots for consistent hue calculation
     const theoreticalTotalRoots = totalPolynomials * degree;
@@ -348,6 +347,18 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     const adaptiveMaxIterations = Math.min(100, Math.max(20, degree * 10));
 
     // Calculate polynomial skip interval to limit total rendered roots
+    //
+    // OBSERVED PHENOMENON: Changing maxRoots causes skipInterval to change, which results in
+    // rendering completely different polynomial indices (e.g., skipInterval=60 renders 0,60,120...
+    // while skipInterval=57 renders 0,57,114...). This creates a visual "jumping" effect where
+    // groups of roots appear/disappear as the slider changes. This is NOT a bug, but reveals
+    // an interesting property: polynomial indices are correlated with the geometric distribution
+    // of their roots, suggesting that Littlewood polynomials have an inherent structure where
+    // nearby indices produce geometrically related roots.
+    //
+    // FUTURE RESEARCH: This could be explored by rendering polynomials grouped by modulo classes
+    // (e.g., all polynomials where index % 100 = 0) on separate canvas layers, allowing users
+    // to visualize and toggle different "families" of polynomials and their geometric structures.
     const skipRatio = theoreticalTotalRoots > maxRoots
       ? theoreticalTotalRoots / maxRoots
       : 1;
@@ -358,18 +369,18 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       ? Math.ceil(totalPolynomials / skipInterval)
       : totalPolynomials;
 
-    // Calculate number of batches needed (each batch processes BATCH_SIZE polynomials)
-    const batchesToRender = Math.ceil(polynomialsToRender / BATCH_SIZE);
+    // Calculate number of frames needed (each frame processes BATCH_SIZE polynomials)
+    const framesToRender = Math.ceil(polynomialsToRender / BATCH_SIZE);
 
     // Calculate effective roots for color distribution
-    // If rendering fewer than 256 batches, normalize to 256 batches for better color coverage
-    const MIN_BATCHES_FOR_COLOR = 256;
-    const effectiveRootsForColor = batchesToRender < MIN_BATCHES_FOR_COLOR
-      ? Math.min(MIN_BATCHES_FOR_COLOR * BATCH_SIZE, totalPolynomials) * degree
+    // If rendering fewer than 256 frames, normalize to 256 frames for better color coverage
+    const MIN_FRAMES_FOR_COLOR = 256;
+    const effectiveRootsForColor = framesToRender < MIN_FRAMES_FOR_COLOR
+      ? Math.min(MIN_FRAMES_FOR_COLOR * BATCH_SIZE, totalPolynomials) * degree
       : theoreticalTotalRoots;
 
-    // Estimate rendering time (assuming 60 FPS, each frame processes one batch)
-    const estimatedSeconds = batchesToRender / 60;
+    // Estimate rendering time (assuming 60 FPS)
+    const estimatedSeconds = framesToRender / 60;
     const estimatedTime = estimatedSeconds < 60
       ? `${estimatedSeconds.toFixed(1)}s`
       : `${(estimatedSeconds / 60).toFixed(1)}m`;
@@ -382,36 +393,35 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   Max roots to draw: ${maxRoots.toLocaleString()}
   Skip interval: every ${skipInterval} polynomials
   Polynomials to render: ${polynomialsToRender.toLocaleString()} (${((polynomialsToRender / totalPolynomials) * 100).toFixed(1)}%)
-  Batches to render: ${batchesToRender.toLocaleString()}
+  Frames to render: ${framesToRender.toLocaleString()}
   Adaptive max iterations: ${adaptiveMaxIterations} (degree ${degree})
   Estimated time: ${estimatedTime} @ 60 FPS`);
 
     // Shared rendering state
-    let currentBatch = 0;
+    let currentFrame = 0;
     let totalConverged = 0;
     let totalIterations = 0;
     let processedRoots = 0;
-    let frameNumber = 0;
-    let currentPolynomialIndex = 0; // Track which polynomial we're processing
+    let currentPolynomialIndex = 0; // Track which polynomial we're processing (0-indexed)
 
     // Equal scale for both axes
     const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
     const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
     const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
 
-    // Batch processing function
-    const processBatch = () => {
+    // Frame processing function (processes BATCH_SIZE polynomials per frame)
+    const processFrame = () => {
       // Check if this render has been cancelled (ID changed)
       if (renderingRef.current.id !== currentRenderId) return;
 
       // Update progress
-      currentBatch++;
-      const progress = (currentBatch / batchesToRender) * 100;
+      currentFrame++;
+      const progress = (currentFrame / framesToRender) * 100;
       setRenderProgress(progress);
 
       // Process BATCH_SIZE polynomials with sparse indices (every skipInterval-th polynomial)
-      let processedInThisBatch = 0;
-      while (processedInThisBatch < BATCH_SIZE && currentPolynomialIndex < polynomialsToRender) {
+      let processedInThisFrame = 0;
+      while (processedInThisFrame < BATCH_SIZE && currentPolynomialIndex < polynomialsToRender) {
           // Calculate the actual polynomial index (with skip interval)
           const polynomialIndex = currentPolynomialIndex * skipInterval;
 
@@ -427,14 +437,14 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
             // Draw roots immediately on offscreen canvas
             result.roots.forEach((root, rootIndex) => {
-              // Calculate hue with interpolation between batch-local and global indexing
-              // colorBandWidth: 0.0 = batch size, 1.0 = total roots
+              // Calculate hue with interpolation between frame-local and global indexing
+              // colorBandWidth: 0.0 = per frame, 1.0 = across all roots
               const theoreticalRootIndex = polynomialIndex * degree + rootIndex;
-              const indexWithinBatch = processedInThisBatch * degree + rootIndex;
-              const batchSize = BATCH_SIZE * degree;
+              const indexWithinFrame = processedInThisFrame * degree + rootIndex;
+              const frameSize = BATCH_SIZE * degree;
 
               // Interpolate between two hue calculations
-              const hueLocal = (indexWithinBatch / batchSize) * 360; // Repeats per batch
+              const hueLocal = (indexWithinFrame / frameSize) * 360; // Repeats per frame
               const hueGlobal = (theoreticalRootIndex / effectiveRootsForColor) * 360; // Spans all roots
               const hue = hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
 
@@ -449,18 +459,17 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
             });
           }
 
-          processedInThisBatch++;
+          processedInThisFrame++;
           currentPolynomialIndex++;
         }
 
       // Update root count and composite to main canvas only after processing
       setRootCount(processedRoots);
-      compositeFrame(progress, frameNumber);
-      frameNumber++;
+      compositeFrame(progress, currentFrame);
 
       // Continue or finish
       if (currentPolynomialIndex < polynomialsToRender) {
-        renderingRef.current.animationId = requestAnimationFrame(processBatch);
+        renderingRef.current.animationId = requestAnimationFrame(processFrame);
       } else {
         // Rendering complete
         setIsRendering(false);
@@ -591,8 +600,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       }
     };
 
-    // Start batch processing
-    processBatch();
+    // Start frame processing
+    processFrame();
   };
 
   const toComplexCoord = (canvasX: number, canvasY: number): Complex => {
