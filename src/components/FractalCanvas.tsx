@@ -340,9 +340,12 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       setRenderProgress(progress);
       setRootCount(processedRoots);
 
+      // Log batch progress
+      const batchSize = batchEnd - batchStart;
+      console.log(`[Batch ${currentBatch}/${totalBatches}] Processed ${batchSize} polynomials, ${processedRoots} total roots, ${progress.toFixed(1)}% complete`);
 
-      // Composite to main canvas
-      compositeFrame();
+      // Composite to main canvas (pass current progress)
+      compositeFrame(progress);
 
       // Continue or finish
       if (currentBatch < totalBatches) {
@@ -367,7 +370,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     };
 
     // Helper to composite offscreen canvas + UI to main canvas
-    const compositeFrame = () => {
+    const compositeFrame = (currentProgress: number) => {
       if (!ctx || !canvas) return;
 
       // Integer ticks only, extended range
@@ -465,12 +468,15 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       });
 
       // Draw progress indicator in bottom-right corner
-      if (isRendering && renderProgress < 100) {
+      if (currentProgress > 0 && currentProgress < 100) {
+        const dpr = window.devicePixelRatio || 1;
+        const padding = 20 * dpr; // Scale padding with device pixel ratio
+
         ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-        ctx.font = "14px monospace";
+        ctx.font = `${14 * dpr}px monospace`;
         ctx.textAlign = "right";
         ctx.textBaseline = "bottom";
-        ctx.fillText(`${renderProgress.toFixed(1)}%`, canvas.width - 10, canvas.height - 10);
+        ctx.fillText(`${currentProgress.toFixed(1)}%`, canvas.width - padding, canvas.height - padding);
       }
     };
 
