@@ -8,6 +8,8 @@ interface ControlPanelProps {
   onCoefficientCountChange: (value: number) => void;
   maxRoots: number;
   onMaxRootsChange: (value: number) => void;
+  transparency: number;
+  onTransparencyChange: (value: number) => void;
 }
 
 export const ControlPanel = ({
@@ -17,6 +19,8 @@ export const ControlPanel = ({
   onCoefficientCountChange,
   maxRoots,
   onMaxRootsChange,
+  transparency,
+  onTransparencyChange,
 }: ControlPanelProps) => {
   return (
     <div className="space-y-6">
@@ -66,6 +70,21 @@ export const ControlPanel = ({
             const actualValue = Math.round(Math.pow(10, logValue));
             onMaxRootsChange(actualValue);
           }}
+          className="w-full"
+        />
+      </div>
+
+      <div className="space-y-3">
+        <Label htmlFor="transparency-slider" className="text-sm font-medium text-foreground">
+          Transparency: {transparency.toFixed(2)}
+        </Label>
+        <Slider
+          id="transparency-slider"
+          min={0.01}
+          max={1}
+          step={0.01}
+          value={[transparency]}
+          onValueChange={(value) => onTransparencyChange(value[0])}
           className="w-full"
         />
       </div>

@@ -17,6 +17,7 @@ interface ConvergenceStats {
 const Index = () => {
   const [degree, setDegree] = useState(6);
   const [maxRoots, setMaxRoots] = useState(10000);
+  const [transparency, setTransparency] = useState(0.5);
   const maxIterations = 100; // Fixed value
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
@@ -47,8 +48,9 @@ const Index = () => {
         onCoefficientsChange={setCoefficients}
         maxRoots={maxRoots}
         maxIterations={maxIterations}
+        transparency={transparency}
       />
-      
+
       {/* Overlaid Control Panel */}
       <aside className="absolute top-4 left-4 w-[350px] max-h-[calc(100vh-2rem)] overflow-y-auto overflow-x-hidden p-6">
         <ControlPanel
@@ -58,6 +60,8 @@ const Index = () => {
           onCoefficientCountChange={handleCoefficientCountChange}
           maxRoots={maxRoots}
           onMaxRootsChange={setMaxRoots}
+          transparency={transparency}
+          onTransparencyChange={setTransparency}
         />
       </aside>
     </div>

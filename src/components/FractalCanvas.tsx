@@ -13,6 +13,7 @@ interface FractalCanvasProps {
   onRenderComplete?: () => void;
   maxRoots: number;
   maxIterations: number;
+  transparency: number;
   onConvergenceStats?: (stats: ConvergenceStats) => void;
 }
 
@@ -23,7 +24,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, onConvergenceStats }: FractalCanvasProps) => {
+export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, onConvergenceStats }: FractalCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -83,7 +84,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   useEffect(() => {
     setErrorMessage(null);
     renderFractal();
-  }, [degree, coefficients, maxRoots, maxIterations, canvasSize]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, canvasSize]);
 
 
   // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
@@ -266,6 +267,9 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Clear offscreen canvas (transparent background for roots accumulation)
     offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
+    // Set composite operation to properly blend semi-transparent pixels
+    offscreenCtx.globalCompositeOperation = 'source-over';
+
     // Calculate total polynomials without allocating memory for them
     const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
     const totalBatches = Math.ceil(totalPolynomials / BATCH_SIZE);
@@ -352,9 +356,13 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
               const x = toCanvasX(root.re);
               const y = toCanvasY(root.im);
 
+              // Use transparency slider value for alpha
+              const centerAlpha = transparency;
+              const edgeAlpha = transparency * 0.25;
+
               const gradient = offscreenCtx.createRadialGradient(x, y, 0, x, y, 3);
-              gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
-              gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.2)`);
+              gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, ${centerAlpha})`);
+              gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, ${edgeAlpha})`);
 
               offscreenCtx.fillStyle = gradient;
               offscreenCtx.beginPath();
