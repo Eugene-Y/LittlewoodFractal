@@ -81,16 +81,6 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   }, []);
 
   useEffect(() => {
-    // Predict root count (degree+1 coefficients, so degree+1 in the exponent)
-    const numPolynomials = Math.pow(coefficients.length, degree + 1);
-    const estimatedRoots = numPolynomials * degree;
-    
-    if (estimatedRoots > maxRoots) {
-      setErrorMessage(`Too many roots to render: ${estimatedRoots.toLocaleString()}. Maximum is ${maxRoots.toLocaleString()}. Please reduce degree or coefficient count.`);
-      setIsRendering(false);
-      return;
-    }
-    
     setErrorMessage(null);
     renderFractal();
   }, [degree, coefficients, maxRoots, maxIterations, canvasSize]);
@@ -286,6 +276,11 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Calculate theoretical total roots for consistent hue calculation
     const theoreticalTotalRoots = totalPolynomials * degree;
 
+    // Calculate batch skip ratio to limit total rendered roots
+    const batchSkipRatio = theoreticalTotalRoots > maxRoots
+      ? theoreticalTotalRoots / maxRoots
+      : 1;
+
     // Shared rendering state
     let currentBatch = 0;
     let totalConverged = 0;
@@ -301,51 +296,57 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     const processBatch = () => {
       if (renderingRef.current.cancelled) return;
 
+      // Skip batches based on ratio to evenly distribute across all polynomials
+      const shouldSkipBatch = batchSkipRatio > 1 && (currentBatch % Math.ceil(batchSkipRatio) !== 0);
+
       const batchStart = currentBatch * BATCH_SIZE;
       const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
-
-      // Process batch of polynomials
-      for (let i = batchStart; i < batchEnd; i++) {
-        const poly = polynomials[i];
-        const result = findRootsDurandKerner(poly, maxIterations);
-
-        if (result.converged) {
-          totalConverged++;
-          totalIterations += result.iterations;
-
-          // Draw roots immediately on offscreen canvas
-          result.roots.forEach((root) => {
-            // Calculate hue based on global root index (theoretical)
-            const globalRootIndex = processedRoots++;
-            const hue = (globalRootIndex / theoreticalTotalRoots) * 360;
-
-            const x = toCanvasX(root.re);
-            const y = toCanvasY(root.im);
-
-            const gradient = offscreenCtx.createRadialGradient(x, y, 0, x, y, 3);
-            gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
-            gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.2)`);
-
-            offscreenCtx.fillStyle = gradient;
-            offscreenCtx.beginPath();
-            offscreenCtx.arc(x, y, 2, 0, 2 * Math.PI);
-            offscreenCtx.fill();
-          });
-        }
-      }
 
       // Update progress
       currentBatch++;
       const progress = (currentBatch / totalBatches) * 100;
       setRenderProgress(progress);
-      setRootCount(processedRoots);
 
       // Log batch progress
       const batchSize = batchEnd - batchStart;
-      console.log(`[Batch ${currentBatch}/${totalBatches}] Processed ${batchSize} polynomials, ${processedRoots} total roots, ${progress.toFixed(1)}% complete`);
+      const skippedStatus = shouldSkipBatch ? ' (SKIPPED)' : '';
+      console.log(`[Batch ${currentBatch}/${totalBatches}] ${batchSize} polynomials, ${processedRoots} total roots, ${progress.toFixed(1)}% complete${skippedStatus}`);
 
-      // Composite to main canvas (pass current progress)
-      compositeFrame(progress);
+      // Process batch of polynomials (or skip if ratio says so)
+      if (!shouldSkipBatch) {
+        for (let i = batchStart; i < batchEnd; i++) {
+          const poly = polynomials[i];
+          const result = findRootsDurandKerner(poly, maxIterations);
+
+          if (result.converged) {
+            totalConverged++;
+            totalIterations += result.iterations;
+
+            // Draw roots immediately on offscreen canvas
+            result.roots.forEach((root) => {
+              // Calculate hue based on global root index (theoretical)
+              const globalRootIndex = processedRoots++;
+              const hue = (globalRootIndex / theoreticalTotalRoots) * 360;
+
+              const x = toCanvasX(root.re);
+              const y = toCanvasY(root.im);
+
+              const gradient = offscreenCtx.createRadialGradient(x, y, 0, x, y, 3);
+              gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
+              gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.2)`);
+
+              offscreenCtx.fillStyle = gradient;
+              offscreenCtx.beginPath();
+              offscreenCtx.arc(x, y, 2, 0, 2 * Math.PI);
+              offscreenCtx.fill();
+            });
+          }
+        }
+
+        // Update root count and composite to main canvas only after processing
+        setRootCount(processedRoots);
+        compositeFrame(progress);
+      }
 
       // Continue or finish
       if (currentBatch < totalBatches) {
@@ -605,14 +606,6 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       />
-      {isRendering && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/50 backdrop-blur-sm">
-          <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-8 h-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">Rendering fractal...</p>
-          </div>
-        </div>
-      )}
       {errorMessage && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm p-8">
           <div className="bg-destructive/10 border border-destructive rounded-lg p-6 max-w-md">
