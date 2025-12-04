@@ -19,6 +19,7 @@ const Index = () => {
   const [maxRoots, setMaxRoots] = useState(10000);
   const [transparency, setTransparency] = useState(0.9);
   const [colorBandWidth, setColorBandWidth] = useState(1.0); // 0.0 = batch size, 1.0 = total roots
+  const [blendMode, setBlendMode] = useState<GlobalCompositeOperation>('source-over');
   const maxIterations = 100; // Fixed value
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
@@ -51,6 +52,7 @@ const Index = () => {
         maxIterations={maxIterations}
         transparency={transparency}
         colorBandWidth={colorBandWidth}
+        blendMode={blendMode}
       />
 
       {/* Overlaid Control Panel */}
@@ -66,6 +68,8 @@ const Index = () => {
           onTransparencyChange={setTransparency}
           colorBandWidth={colorBandWidth}
           onColorBandWidthChange={setColorBandWidth}
+          blendMode={blendMode}
+          onBlendModeChange={setBlendMode}
         />
       </aside>
     </div>

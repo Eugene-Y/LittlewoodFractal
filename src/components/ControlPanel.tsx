@@ -1,5 +1,7 @@
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 
 interface ControlPanelProps {
   degree: number;
@@ -12,6 +14,8 @@ interface ControlPanelProps {
   onTransparencyChange: (value: number) => void;
   colorBandWidth: number;
   onColorBandWidthChange: (value: number) => void;
+  blendMode: GlobalCompositeOperation;
+  onBlendModeChange: (value: GlobalCompositeOperation) => void;
 }
 
 export const ControlPanel = ({
@@ -25,9 +29,17 @@ export const ControlPanel = ({
   onTransparencyChange,
   colorBandWidth,
   onColorBandWidthChange,
+  blendMode,
+  onBlendModeChange,
 }: ControlPanelProps) => {
   return (
-    <div className="space-y-4">
+    <Tabs defaultValue="polynomial" className="w-full">
+      <TabsList className="w-full bg-background/50 backdrop-blur-sm">
+        <TabsTrigger value="polynomial" className="flex-1">Polynomial</TabsTrigger>
+        <TabsTrigger value="style" className="flex-1">Style</TabsTrigger>
+      </TabsList>
+
+      <TabsContent value="polynomial" className="space-y-4 mt-4">
       <div className="space-y-2">
         <Label htmlFor="degree-slider" className="text-sm font-normal text-foreground">
           Polynomial Degree: {degree}
@@ -84,7 +96,9 @@ export const ControlPanel = ({
           className="w-full"
         />
       </div>
+      </TabsContent>
 
+      <TabsContent value="style" className="space-y-4 mt-4">
       <div className="space-y-2">
         <Label htmlFor="transparency-slider" className="text-sm font-normal text-foreground">
           Transparency: {transparency < 0.01 ? transparency.toFixed(3) : transparency.toFixed(2)}
@@ -127,6 +141,25 @@ export const ControlPanel = ({
           className="w-full"
         />
       </div>
-    </div>
+
+      <div className="flex items-center gap-3">
+        <Label htmlFor="blend-mode-select" className="text-sm font-normal text-foreground whitespace-nowrap">
+          Blend Mode
+        </Label>
+        <Select value={blendMode} onValueChange={(value) => onBlendModeChange(value as GlobalCompositeOperation)}>
+          <SelectTrigger id="blend-mode-select" className="flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="source-over">Source Over</SelectItem>
+            <SelectItem value="multiply">Multiply</SelectItem>
+            <SelectItem value="screen">Screen</SelectItem>
+            <SelectItem value="overlay">Overlay</SelectItem>
+            <SelectItem value="color-dodge">Color Dodge</SelectItem>
+          </SelectContent>
+        </Select>
+      </div>
+      </TabsContent>
+    </Tabs>
   );
 };

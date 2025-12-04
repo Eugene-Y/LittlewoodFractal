@@ -15,6 +15,7 @@ interface FractalCanvasProps {
   maxIterations: number;
   transparency: number;
   colorBandWidth: number;
+  blendMode: GlobalCompositeOperation;
   onConvergenceStats?: (stats: ConvergenceStats) => void;
 }
 
@@ -25,7 +26,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, onConvergenceStats }: FractalCanvasProps) => {
+export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, onConvergenceStats }: FractalCanvasProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -40,12 +41,13 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
-  const previousRenderParams = useRef<{ framesToRender: number; degree: number; coefficients: Complex[]; transparency: number; colorBandWidth: number; canvasSize: { width: number; height: number } }>({
+  const previousRenderParams = useRef<{ framesToRender: number; degree: number; coefficients: Complex[]; transparency: number; colorBandWidth: number; blendMode: GlobalCompositeOperation; canvasSize: { width: number; height: number } }>({
     framesToRender: 0,
     degree: 0,
     coefficients: [],
     transparency: 0,
     colorBandWidth: 0,
+    blendMode: 'source-over',
     canvasSize: { width: 0, height: 0 }
   });
   const BATCH_SIZE = 2048; // Process 2048 polynomials per frame
@@ -100,6 +102,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       prev.coefficients !== coefficients ||
       prev.transparency !== transparency ||
       prev.colorBandWidth !== colorBandWidth ||
+      prev.blendMode !== blendMode ||
       prev.canvasSize.width !== canvasSize.width ||
       prev.canvasSize.height !== canvasSize.height
     ) {
@@ -109,6 +112,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         coefficients,
         transparency,
         colorBandWidth,
+        blendMode,
         canvasSize: { ...canvasSize }
       };
       renderFractal();
@@ -134,6 +138,7 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         coefficients,
         transparency,
         colorBandWidth,
+        blendMode,
         canvasSize: { ...canvasSize }
       };
       renderFractal();
@@ -145,10 +150,11 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
         coefficients,
         transparency,
         colorBandWidth,
+        blendMode,
         canvasSize: { ...canvasSize }
       };
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, canvasSize]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize]);
 
 
   // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
@@ -331,8 +337,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Clear offscreen canvas (transparent background for roots accumulation)
     offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
-    // Set composite operation to properly blend semi-transparent pixels
-    offscreenCtx.globalCompositeOperation = 'source-over';
+    // Set composite operation to blend semi-transparent pixels
+    offscreenCtx.globalCompositeOperation = blendMode;
 
     // Disable antialiasing for better performance
     offscreenCtx.imageSmoothingEnabled = false;
