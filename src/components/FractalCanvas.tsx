@@ -39,6 +39,13 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
+  const previousRenderParams = useRef<{ batchesToRender: number; degree: number; coefficients: Complex[]; transparency: number; canvasSize: { width: number; height: number } }>({
+    batchesToRender: 0,
+    degree: 0,
+    coefficients: [],
+    transparency: 0,
+    canvasSize: { width: 0, height: 0 }
+  });
   const BATCH_SIZE = 1024; // Process 1024 polynomials per frame
 
   // Fixed viewport for consistent scaling
@@ -83,7 +90,58 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
   useEffect(() => {
     setErrorMessage(null);
-    renderFractal();
+
+    // For degree, coefficients, transparency, canvasSize changes: always re-render
+    const prev = previousRenderParams.current;
+    if (
+      prev.degree !== degree ||
+      prev.coefficients !== coefficients ||
+      prev.transparency !== transparency ||
+      prev.canvasSize.width !== canvasSize.width ||
+      prev.canvasSize.height !== canvasSize.height
+    ) {
+      previousRenderParams.current = {
+        batchesToRender: 0, // Will be recalculated
+        degree,
+        coefficients,
+        transparency,
+        canvasSize: { ...canvasSize }
+      };
+      renderFractal();
+      return;
+    }
+
+    // For maxRoots changes: only re-render if batchesToRender actually changed
+    const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
+    const totalBatches = Math.ceil(totalPolynomials / BATCH_SIZE);
+    const theoreticalTotalRoots = totalPolynomials * degree;
+    const batchSkipRatio = theoreticalTotalRoots > maxRoots
+      ? theoreticalTotalRoots / maxRoots
+      : 1;
+    const skipInterval = Math.ceil(batchSkipRatio);
+    const batchesToRender = batchSkipRatio > 1
+      ? Math.ceil(totalBatches / skipInterval)
+      : totalBatches;
+
+    if (prev.batchesToRender !== batchesToRender) {
+      previousRenderParams.current = {
+        batchesToRender,
+        degree,
+        coefficients,
+        transparency,
+        canvasSize: { ...canvasSize }
+      };
+      renderFractal();
+    } else {
+      // Update ref even if not re-rendering
+      previousRenderParams.current = {
+        batchesToRender,
+        degree,
+        coefficients,
+        transparency,
+        canvasSize: { ...canvasSize }
+      };
+    }
   }, [degree, coefficients, maxRoots, maxIterations, transparency, canvasSize]);
 
 
