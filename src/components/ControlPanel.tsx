@@ -23,9 +23,9 @@ export const ControlPanel = ({
   onTransparencyChange,
 }: ControlPanelProps) => {
   return (
-    <div className="space-y-6">
-      <div className="space-y-3">
-        <Label htmlFor="degree-slider" className="text-sm font-medium text-foreground">
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <Label htmlFor="degree-slider" className="text-sm font-normal text-foreground">
           Polynomial Degree: {degree}
         </Label>
         <Slider
@@ -39,8 +39,8 @@ export const ControlPanel = ({
         />
       </div>
 
-      <div className="space-y-3">
-        <Label htmlFor="coefficient-slider" className="text-sm font-medium text-foreground">
+      <div className="space-y-2">
+        <Label htmlFor="coefficient-slider" className="text-sm font-normal text-foreground">
           Number of Coefficients: {coefficientCount}
         </Label>
         <Slider
@@ -54,8 +54,8 @@ export const ControlPanel = ({
         />
       </div>
 
-      <div className="space-y-3">
-        <Label htmlFor="maxroots-slider" className="text-sm font-medium text-foreground">
+      <div className="space-y-2">
+        <Label htmlFor="maxroots-slider" className="text-sm font-normal text-foreground">
           Max Roots To Draw: {maxRoots.toLocaleString()}
         </Label>
         <Slider
@@ -74,17 +74,30 @@ export const ControlPanel = ({
         />
       </div>
 
-      <div className="space-y-3">
-        <Label htmlFor="transparency-slider" className="text-sm font-medium text-foreground">
-          Transparency: {transparency.toFixed(2)}
+      <div className="space-y-2">
+        <Label htmlFor="transparency-slider" className="text-sm font-normal text-foreground">
+          Transparency: {transparency < 0.01 ? transparency.toFixed(3) : transparency.toFixed(2)}
         </Label>
         <Slider
           id="transparency-slider"
-          min={0.01}
-          max={1}
-          step={0.01}
-          value={[transparency]}
-          onValueChange={(value) => onTransparencyChange(value[0])}
+          min={0}
+          max={100}
+          step={1}
+          value={[
+            transparency <= 0.125
+              ? (Math.log(transparency / 0.001) / Math.log(125)) * 50
+              : 50 + (Math.log(transparency / 0.125) / Math.log(8)) * 50
+          ]}
+          onValueChange={(value) => {
+            // Two-segment logarithmic scale: 0.001→0.125 at 0→50, 0.125→1.0 at 50→100
+            let actualValue: number;
+            if (value[0] <= 50) {
+              actualValue = 0.001 * Math.pow(125, value[0] / 50);
+            } else {
+              actualValue = 0.125 * Math.pow(8, (value[0] - 50) / 50);
+            }
+            onTransparencyChange(Math.max(0.001, Math.min(1, actualValue)));
+          }}
           className="w-full"
         />
       </div>
