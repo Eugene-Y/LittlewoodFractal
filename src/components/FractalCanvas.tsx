@@ -356,17 +356,10 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
               const x = toCanvasX(root.re);
               const y = toCanvasY(root.im);
 
-              // Use transparency slider value for alpha
-              const centerAlpha = transparency;
-              const edgeAlpha = transparency * 0.25;
-
-              const gradient = offscreenCtx.createRadialGradient(x, y, 0, x, y, 3);
-              gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, ${centerAlpha})`);
-              gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, ${edgeAlpha})`);
-
-              offscreenCtx.fillStyle = gradient;
+              // Simple solid color rendering (most performant)
+              offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
               offscreenCtx.beginPath();
-              offscreenCtx.arc(x, y, 2, 0, 2 * Math.PI);
+              offscreenCtx.arc(x, y, 1.5, 0, 2 * Math.PI);
               offscreenCtx.fill();
             });
           }
