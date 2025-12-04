@@ -422,10 +422,11 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
             totalIterations += result.iterations;
 
             // Draw roots immediately on offscreen canvas
-            result.roots.forEach((root) => {
-              // Calculate hue based on global root index (theoretical)
-              const globalRootIndex = processedRoots++;
-              const hue = (globalRootIndex / theoreticalTotalRoots) * 360;
+            result.roots.forEach((root, rootIndex) => {
+              // Calculate hue based on theoretical polynomial position (not processed count)
+              // This ensures color distribution across entire spectrum regardless of skipping
+              const theoreticalRootIndex = i * degree + rootIndex;
+              const hue = (theoreticalRootIndex / theoreticalTotalRoots) * 360;
 
               const x = toCanvasX(root.re);
               const y = toCanvasY(root.im);
@@ -433,6 +434,8 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
               // Simple solid color rendering (most performant)
               offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
               offscreenCtx.fillRect(x - 1, y - 1, 2, 2);
+
+              processedRoots++;
             });
           }
         }
