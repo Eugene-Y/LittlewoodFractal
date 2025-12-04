@@ -57,7 +57,7 @@ export const ControlPanel = ({
         <Slider
           id="maxroots-slider"
           min={10000}
-          max={500000}
+          max={5000000}
           step={10000}
           value={[maxRoots]}
           onValueChange={(value) => onMaxRootsChange(value[0])}

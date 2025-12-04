@@ -35,6 +35,11 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 1200 });
   const [isMobile, setIsMobile] = useState(false);
 
+  // Batch rendering state
+  const [renderProgress, setRenderProgress] = useState(0);
+  const renderingRef = useRef<{ cancelled: boolean; animationId?: number }>({ cancelled: false });
+  const BATCH_SIZE = 1024; // Process 1024 polynomials per frame
+
   // Fixed viewport for consistent scaling
   const VIEWPORT_SIZE = 6; // Shows from -3 to 3 on both axes
 
@@ -66,7 +71,13 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Initial update with small delay to ensure container is rendered
     setTimeout(updateCanvasSize, 0);
     window.addEventListener('resize', updateCanvasSize);
-    return () => window.removeEventListener('resize', updateCanvasSize);
+    return () => {
+      window.removeEventListener('resize', updateCanvasSize);
+      // Cancel any ongoing animation on unmount
+      if (renderingRef.current.animationId) {
+        cancelAnimationFrame(renderingRef.current.animationId);
+      }
+    };
   }, []);
 
   useEffect(() => {
@@ -249,7 +260,17 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     const offscreenCanvas = offscreenCanvasRef.current;
     if (!canvas || !offscreenCanvas) return;
 
+    // Cancel any ongoing render
+    if (renderingRef.current.animationId) {
+      cancelAnimationFrame(renderingRef.current.animationId);
+    }
+    renderingRef.current.cancelled = true;
+
+    // Start new render
+    renderingRef.current = { cancelled: false };
     setIsRendering(true);
+    setRenderProgress(0);
+
     const ctx = canvas.getContext("2d");
     const offscreenCtx = offscreenCanvas.getContext("2d", { alpha: true });
     if (!ctx || !offscreenCtx) return;
@@ -257,164 +278,204 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
     // Clear offscreen canvas (transparent background for roots accumulation)
     offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
-    const allRoots: Complex[] = [];
-    let totalConverged = 0;
-    let totalPolynomials = 0;
-    let totalIterations = 0;
-
-    // Generate all polynomials and find their roots
+    // Generate all polynomials
     const polynomials = generatePolynomials(degree, coefficients);
-    
-    for (let i = 0; i < polynomials.length; i++) {
-      const poly = polynomials[i];
-      // Polynomial coefficients now include the constant term
-      const result = findRootsDurandKerner(poly, maxIterations);
-      
-      // Only include converged roots
-      if (result.converged) {
-        allRoots.push(...result.roots);
-        totalConverged++;
-      }
-      totalPolynomials++;
-      totalIterations += result.iterations;
-    }
+    const totalPolynomials = polynomials.length;
+    const totalBatches = Math.ceil(totalPolynomials / BATCH_SIZE);
 
-    setRootCount(allRoots.length);
-    
-    // Report convergence stats
-    if (onConvergenceStats) {
-      onConvergenceStats({
-        totalRoots: allRoots.length,
-        convergedRoots: totalConverged,
-        convergenceRate: totalPolynomials > 0 ? (totalConverged / totalPolynomials) * 100 : 0,
-        avgIterations: totalPolynomials > 0 ? totalIterations / totalPolynomials : 0,
-      });
-    }
+    // Calculate theoretical total roots for consistent hue calculation
+    const theoreticalTotalRoots = totalPolynomials * degree;
 
-    // Fixed viewport with equal scaling
-    const minRe = -VIEWPORT_SIZE / 2;
-    const maxRe = VIEWPORT_SIZE / 2;
-    const minIm = -VIEWPORT_SIZE / 2;
-    const maxIm = VIEWPORT_SIZE / 2;
+    // Shared rendering state
+    let currentBatch = 0;
+    let totalConverged = 0;
+    let totalIterations = 0;
+    let processedRoots = 0;
 
     // Equal scale for both axes
     const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
-
     const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
     const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
 
-    // Integer ticks only, extended range
-    const tickSpacing = 1;
-    const startRe = -10;
-    const endRe = 10;
-    const startIm = -10;
-    const endIm = 10;
+    // Batch processing function
+    const processBatch = () => {
+      if (renderingRef.current.cancelled) return;
 
-    // Draw roots on offscreen canvas with gradient colors
-    allRoots.forEach((root, index) => {
-      const x = toCanvasX(root.re);
-      const y = toCanvasY(root.im);
+      const batchStart = currentBatch * BATCH_SIZE;
+      const batchEnd = Math.min(batchStart + BATCH_SIZE, totalPolynomials);
 
-      const hue = (index / allRoots.length) * 360;
-      const gradient = offscreenCtx.createRadialGradient(x, y, 0, x, y, 3);
-      gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
-      gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.2)`);
+      // Process batch of polynomials
+      for (let i = batchStart; i < batchEnd; i++) {
+        const poly = polynomials[i];
+        const result = findRootsDurandKerner(poly, maxIterations);
 
-      offscreenCtx.fillStyle = gradient;
-      offscreenCtx.beginPath();
-      offscreenCtx.arc(x, y, 2, 0, 2 * Math.PI);
-      offscreenCtx.fill();
-    });
+        if (result.converged) {
+          totalConverged++;
+          totalIterations += result.iterations;
 
-    // Composite: Clear main canvas and draw background
-    ctx.fillStyle = "#0a0a14";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+          // Draw roots immediately on offscreen canvas
+          result.roots.forEach((root) => {
+            // Calculate hue based on global root index (theoretical)
+            const globalRootIndex = processedRoots++;
+            const hue = (globalRootIndex / theoreticalTotalRoots) * 360;
 
-    // Draw accumulated roots from offscreen canvas
-    ctx.drawImage(offscreenCanvas, 0, 0);
+            const x = toCanvasX(root.re);
+            const y = toCanvasY(root.im);
 
-    // Draw axes on main canvas
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-    ctx.lineWidth = 2;
-    ctx.beginPath();
-    ctx.moveTo(toCanvasX(0), 0);
-    ctx.lineTo(toCanvasX(0), canvas.height);
-    ctx.moveTo(0, toCanvasY(0));
-    ctx.lineTo(canvas.width, toCanvasY(0));
-    ctx.stroke();
+            const gradient = offscreenCtx.createRadialGradient(x, y, 0, x, y, 3);
+            gradient.addColorStop(0, `hsla(${hue}, 100%, 70%, 0.8)`);
+            gradient.addColorStop(1, `hsla(${hue}, 100%, 50%, 0.2)`);
 
-    // Draw tickmarks and labels on main canvas
-    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-    ctx.textAlign = "center";
-    ctx.textBaseline = "top";
-
-    // X-axis tickmarks
-    for (let re = startRe; re <= endRe; re += tickSpacing) {
-      if (Math.abs(re) < tickSpacing / 2) continue; // Skip zero
-      const x = toCanvasX(re);
-      const y0 = toCanvasY(0);
-      if (x >= 0 && x <= canvas.width) {
-        // Tick mark
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x, y0 - 5);
-        ctx.lineTo(x, y0 + 5);
-        ctx.stroke();
-
-        // Label
-        const label = re.toString();
-        const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
-        ctx.fillText(label, x, labelY);
+            offscreenCtx.fillStyle = gradient;
+            offscreenCtx.beginPath();
+            offscreenCtx.arc(x, y, 2, 0, 2 * Math.PI);
+            offscreenCtx.fill();
+          });
+        }
       }
-    }
 
-    // Y-axis tickmarks
-    ctx.textAlign = "left";
-    ctx.textBaseline = "middle";
-    for (let im = startIm; im <= endIm; im += tickSpacing) {
-      if (Math.abs(im) < tickSpacing / 2) continue; // Skip zero
-      const y = toCanvasY(im);
-      const x0 = toCanvasX(0);
-      if (y >= 0 && y <= canvas.height) {
-        // Tick mark
-        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(x0 - 5, y);
-        ctx.lineTo(x0 + 5, y);
-        ctx.stroke();
+      // Update progress
+      currentBatch++;
+      const progress = (currentBatch / totalBatches) * 100;
+      setRenderProgress(progress);
+      setRootCount(processedRoots);
 
-        // Label
-        const label = im.toString() + "i";
-        const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
-        ctx.fillText(label, labelX, y);
+
+      // Composite to main canvas
+      compositeFrame();
+
+      // Continue or finish
+      if (currentBatch < totalBatches) {
+        renderingRef.current.animationId = requestAnimationFrame(processBatch);
+      } else {
+        // Rendering complete
+        setIsRendering(false);
+        setRenderProgress(100);
+
+        // Report final convergence stats
+        if (onConvergenceStats) {
+          onConvergenceStats({
+            totalRoots: processedRoots,
+            convergedRoots: totalConverged,
+            convergenceRate: totalPolynomials > 0 ? (totalConverged / totalPolynomials) * 100 : 0,
+            avgIterations: totalPolynomials > 0 ? totalIterations / totalPolynomials : 0,
+          });
+        }
+
+        onRenderComplete?.();
       }
-    }
+    };
 
-    // Draw coefficient dots as white rings on main canvas (responsive sizing)
-    const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
-    
-    coefficients.forEach((coeff, index) => {
-      const x = toCanvasX(coeff.re);
-      const y = toCanvasY(coeff.im);
+    // Helper to composite offscreen canvas + UI to main canvas
+    const compositeFrame = () => {
+      if (!ctx || !canvas) return;
 
-      // Highlight if hovered or dragged
-      const isActive = index === hoveredIndex || index === draggedIndex;
-      const radius = isActive ? baseRadius * 1.4 : baseRadius;
-      const lineWidth = isActive ? 4 : 3;
+      // Integer ticks only, extended range
+      const tickSpacing = 1;
+      const startRe = -10;
+      const endRe = 10;
+      const startIm = -10;
+      const endIm = 10;
 
-      // Simple white ring - no glow
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = lineWidth;
+      // Composite: Clear main canvas and draw background
+      ctx.fillStyle = "#0a0a14";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw accumulated roots from offscreen canvas
+      ctx.drawImage(offscreenCanvas, 0, 0);
+
+      // Draw axes on main canvas
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+      ctx.lineWidth = 2;
       ctx.beginPath();
-      ctx.arc(x, y, radius, 0, 2 * Math.PI);
+      ctx.moveTo(toCanvasX(0), 0);
+      ctx.lineTo(toCanvasX(0), canvas.height);
+      ctx.moveTo(0, toCanvasY(0));
+      ctx.lineTo(canvas.width, toCanvasY(0));
       ctx.stroke();
-    });
 
-    setIsRendering(false);
-    onRenderComplete?.();
+      // Draw tickmarks and labels on main canvas
+      ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+      ctx.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+
+      // X-axis tickmarks
+      for (let re = startRe; re <= endRe; re += tickSpacing) {
+        if (Math.abs(re) < tickSpacing / 2) continue; // Skip zero
+        const x = toCanvasX(re);
+        const y0 = toCanvasY(0);
+        if (x >= 0 && x <= canvas.width) {
+          // Tick mark
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x, y0 - 5);
+          ctx.lineTo(x, y0 + 5);
+          ctx.stroke();
+
+          // Label
+          const label = re.toString();
+          const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
+          ctx.fillText(label, x, labelY);
+        }
+      }
+
+      // Y-axis tickmarks
+      ctx.textAlign = "left";
+      ctx.textBaseline = "middle";
+      for (let im = startIm; im <= endIm; im += tickSpacing) {
+        if (Math.abs(im) < tickSpacing / 2) continue; // Skip zero
+        const y = toCanvasY(im);
+        const x0 = toCanvasX(0);
+        if (y >= 0 && y <= canvas.height) {
+          // Tick mark
+          ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+          ctx.lineWidth = 2;
+          ctx.beginPath();
+          ctx.moveTo(x0 - 5, y);
+          ctx.lineTo(x0 + 5, y);
+          ctx.stroke();
+
+          // Label
+          const label = im.toString() + "i";
+          const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
+          ctx.fillText(label, labelX, y);
+        }
+      }
+
+      // Draw coefficient dots as white rings on main canvas (responsive sizing)
+      const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
+
+      coefficients.forEach((coeff, index) => {
+        const x = toCanvasX(coeff.re);
+        const y = toCanvasY(coeff.im);
+
+        // Highlight if hovered or dragged
+        const isActive = index === hoveredIndex || index === draggedIndex;
+        const radius = isActive ? baseRadius * 1.4 : baseRadius;
+        const lineWidth = isActive ? 4 : 3;
+
+        // Simple white ring - no glow
+        ctx.strokeStyle = 'white';
+        ctx.lineWidth = lineWidth;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        ctx.stroke();
+      });
+
+      // Draw progress indicator in bottom-right corner
+      if (isRendering && renderProgress < 100) {
+        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+        ctx.font = "14px monospace";
+        ctx.textAlign = "right";
+        ctx.textBaseline = "bottom";
+        ctx.fillText(`${renderProgress.toFixed(1)}%`, canvas.width - 10, canvas.height - 10);
+      }
+    };
+
+    // Start batch processing
+    processBatch();
   };
 
   const toComplexCoord = (canvasX: number, canvasY: number): Complex => {
