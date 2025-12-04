@@ -40,6 +40,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [draggedIndex, setDraggedIndex] = useState<number | null>(null);
   const [hoveredIndex, setHoveredIndex] = useState<number | null>(null);
+  const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 1200 });
   const [isMobile, setIsMobile] = useState(false);
 
@@ -81,7 +82,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // Draw accumulated roots from offscreen canvas
       exportCtx.drawImage(offscreenCanvas, 0, 0);
 
-      // Draw coefficient dots as white rings (same as in compositeFrame)
+      // Draw coefficient dots as double rings (black + white)
       const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
       const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
       const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
@@ -91,6 +92,14 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         const x = toCanvasX(coeff.re);
         const y = toCanvasY(coeff.im);
 
+        // Draw black ring (outer)
+        exportCtx.strokeStyle = 'black';
+        exportCtx.lineWidth = 5;
+        exportCtx.beginPath();
+        exportCtx.arc(x, y, baseRadius, 0, 2 * Math.PI);
+        exportCtx.stroke();
+
+        // Draw white ring (inner)
         exportCtx.strokeStyle = 'white';
         exportCtx.lineWidth = 3;
         exportCtx.beginPath();
@@ -546,6 +555,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const compositeFrame = (currentProgress: number, frame: number) => {
       if (!ctx || !canvas) return;
 
+      const dpr = window.devicePixelRatio || 1;
+
       // Integer ticks only, extended range
       const tickSpacing = 1;
       const startRe = -10;
@@ -620,7 +631,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         }
       }
 
-      // Draw coefficient dots as white rings on main canvas (responsive sizing)
+      // Draw coefficient dots as double rings (black + white) on main canvas (responsive sizing)
       const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
 
       coefficients.forEach((coeff, index) => {
@@ -632,7 +643,14 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         const radius = isActive ? baseRadius * 1.4 : baseRadius;
         const lineWidth = isActive ? 4 : 3;
 
-        // Simple white ring - no glow
+        // Draw black ring (outer)
+        ctx.strokeStyle = 'black';
+        ctx.lineWidth = lineWidth + 2;
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, 2 * Math.PI);
+        ctx.stroke();
+
+        // Draw white ring (inner)
         ctx.strokeStyle = 'white';
         ctx.lineWidth = lineWidth;
         ctx.beginPath();
@@ -640,9 +658,45 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         ctx.stroke();
       });
 
+      // Draw coordinates at mouse position
+      if (mousePos) {
+        const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+        const mouseRe = (mousePos.x - canvas.width / 2) / scale;
+        const mouseIm = -(mousePos.y - canvas.height / 2) / scale;
+
+        let coordText: string;
+
+        // If dragging, show coefficient coordinates, otherwise show mouse coordinates
+        if (draggedIndex !== null) {
+          const coeff = coefficients[draggedIndex];
+          coordText = `${coeff.re.toFixed(3)} ${coeff.im >= 0 ? '+' : ''}${coeff.im.toFixed(3)}i`;
+        } else {
+          coordText = `${mouseRe.toFixed(3)} ${mouseIm >= 0 ? '+' : ''}${mouseIm.toFixed(3)}i`;
+        }
+
+        ctx.font = `${14 * dpr}px monospace`;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'top';
+
+        // Draw text background
+        const textMetrics = ctx.measureText(coordText);
+        const textWidth = textMetrics.width;
+        const textHeight = 14 * dpr;
+        const padding = 4 * dpr;
+
+        const textX = mousePos.x + 15 * dpr;
+        const textY = mousePos.y + 15 * dpr;
+
+        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+        ctx.fillRect(textX - padding, textY - padding, textWidth + padding * 2, textHeight + padding * 2);
+
+        // Draw text
+        ctx.fillStyle = 'white';
+        ctx.fillText(coordText, textX, textY);
+      }
+
       // Draw progress indicator in bottom-right corner
       if (currentProgress > 0 && currentProgress < 100) {
-        const dpr = window.devicePixelRatio || 1;
         const padding = 20 * dpr; // Scale padding with device pixel ratio
 
         ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
@@ -697,6 +751,153 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     }
   };
 
+  // Helper function to redraw the coordinate overlay
+  const redrawCoordinateOverlay = () => {
+    const canvas = canvasRef.current;
+    const offscreenCanvas = offscreenCanvasRef.current;
+    if (!canvas || !offscreenCanvas) return;
+
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+
+    // Clear and redraw the entire canvas from scratch
+    ctx.fillStyle = "#0a0a14";
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Draw accumulated roots from offscreen canvas
+    ctx.drawImage(offscreenCanvas, 0, 0);
+
+    // Draw axes
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.lineWidth = 2;
+    const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
+    const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
+
+    ctx.beginPath();
+    ctx.moveTo(toCanvasX(0), 0);
+    ctx.lineTo(toCanvasX(0), canvas.height);
+    ctx.moveTo(0, toCanvasY(0));
+    ctx.lineTo(canvas.width, toCanvasY(0));
+    ctx.stroke();
+
+    // Draw tickmarks and labels
+    ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+    ctx.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+    const tickSpacing = 1;
+    const startRe = -10;
+    const endRe = 10;
+    const startIm = -10;
+    const endIm = 10;
+
+    // X-axis tickmarks
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    for (let re = startRe; re <= endRe; re += tickSpacing) {
+      if (Math.abs(re) < tickSpacing / 2) continue;
+      const x = toCanvasX(re);
+      const y0 = toCanvasY(0);
+      if (x >= 0 && x <= canvas.width) {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x, y0 - 5);
+        ctx.lineTo(x, y0 + 5);
+        ctx.stroke();
+
+        const label = re.toString();
+        const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
+        ctx.fillText(label, x, labelY);
+      }
+    }
+
+    // Y-axis tickmarks
+    ctx.textAlign = "left";
+    ctx.textBaseline = "middle";
+    for (let im = startIm; im <= endIm; im += tickSpacing) {
+      if (Math.abs(im) < tickSpacing / 2) continue;
+      const y = toCanvasY(im);
+      const x0 = toCanvasX(0);
+      if (y >= 0 && y <= canvas.height) {
+        ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(x0 - 5, y);
+        ctx.lineTo(x0 + 5, y);
+        ctx.stroke();
+
+        const label = im.toString() + "i";
+        const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
+        ctx.fillText(label, labelX, y);
+      }
+    }
+
+    // Draw coefficient dots as double rings
+    const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
+
+    coefficients.forEach((coeff, index) => {
+      const x = toCanvasX(coeff.re);
+      const y = toCanvasY(coeff.im);
+
+      const isActive = index === hoveredIndex || index === draggedIndex;
+      const radius = isActive ? baseRadius * 1.4 : baseRadius;
+      const lineWidth = isActive ? 4 : 3;
+
+      // Black ring (outer)
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth = lineWidth + 2;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, 2 * Math.PI);
+      ctx.stroke();
+
+      // White ring (inner)
+      ctx.strokeStyle = 'white';
+      ctx.lineWidth = lineWidth;
+      ctx.beginPath();
+      ctx.arc(x, y, radius, 0, 2 * Math.PI);
+      ctx.stroke();
+    });
+
+    // Draw coordinates at mouse position
+    if (mousePos) {
+      const mouseRe = (mousePos.x - canvas.width / 2) / scale;
+      const mouseIm = -(mousePos.y - canvas.height / 2) / scale;
+
+      let coordText: string;
+
+      // If dragging, show coefficient coordinates, otherwise show mouse coordinates
+      if (draggedIndex !== null) {
+        const coeff = coefficients[draggedIndex];
+        coordText = `${coeff.re.toFixed(3)} ${coeff.im >= 0 ? '+' : ''}${coeff.im.toFixed(3)}i`;
+      } else {
+        coordText = `${mouseRe.toFixed(3)} ${mouseIm >= 0 ? '+' : ''}${mouseIm.toFixed(3)}i`;
+      }
+
+      ctx.font = `${14 * dpr}px monospace`;
+      ctx.textAlign = 'left';
+      ctx.textBaseline = 'top';
+
+      // Draw text background
+      const textMetrics = ctx.measureText(coordText);
+      const textWidth = textMetrics.width;
+      const textHeight = 14 * dpr;
+      const padding = 4 * dpr;
+
+      const textX = mousePos.x + 15 * dpr;
+      const textY = mousePos.y + 15 * dpr;
+
+      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
+      ctx.fillRect(textX - padding, textY - padding, textWidth + padding * 2, textHeight + padding * 2);
+
+      // Draw text
+      ctx.fillStyle = 'white';
+      ctx.fillText(coordText, textX, textY);
+    }
+  };
+
   const handleMouseMove = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -709,10 +910,19 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       const newCoord = toComplexCoord(x, y);
       const newCoeffs = [...coefficients];
       newCoeffs[draggedIndex] = newCoord;
+
+      // Update mouse position for coordinate display
+      setMousePos({ x, y });
+      redrawCoordinateOverlay();
+
       onCoefficientsChange(newCoeffs);
     } else {
       const hoveredCoeff = getCoeffAtPoint(x, y);
       setHoveredIndex(hoveredCoeff);
+
+      // Update mouse position and trigger redraw
+      setMousePos({ x, y });
+      redrawCoordinateOverlay();
     }
   };
 
@@ -723,6 +933,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const handleMouseLeave = () => {
     setDraggedIndex(null);
     setHoveredIndex(null);
+    setMousePos(null);
   };
 
   // Touch event handlers
@@ -751,6 +962,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const x = ((touch.clientX - rect.left) / rect.width) * canvas.width;
     const y = ((touch.clientY - rect.top) / rect.height) * canvas.height;
 
+    // Update mouse position for coordinate display
+    setMousePos({ x, y });
+    redrawCoordinateOverlay();
+
     const newCoord = toComplexCoord(x, y);
     const newCoeffs = [...coefficients];
     newCoeffs[draggedIndex] = newCoord;
@@ -760,6 +975,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
   const handleTouchEnd = () => {
     setDraggedIndex(null);
+    setMousePos(null);
   };
 
   return (
