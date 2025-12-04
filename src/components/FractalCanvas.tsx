@@ -361,9 +361,10 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       : totalBatches;
 
     // Calculate effective roots for color distribution
-    // If rendering 1-2 batches, use only those roots for full color spectrum
-    const effectiveRootsForColor = batchesToRender <= 2
-      ? Math.min(batchesToRender * BATCH_SIZE, totalPolynomials) * degree
+    // If rendering fewer than 256 batches, normalize to 256 batches for better color coverage
+    const MIN_BATCHES_FOR_COLOR = 256;
+    const effectiveRootsForColor = batchesToRender < MIN_BATCHES_FOR_COLOR
+      ? Math.min(MIN_BATCHES_FOR_COLOR * BATCH_SIZE, totalPolynomials) * degree
       : theoreticalTotalRoots;
 
     // Estimate rendering time (assuming 60 FPS, each frame processes one batch)
