@@ -2,6 +2,8 @@ import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Button } from "@/components/ui/button";
+import { Download, Link } from "lucide-react";
 
 interface ControlPanelProps {
   degree: number;
@@ -16,6 +18,8 @@ interface ControlPanelProps {
   onColorBandWidthChange: (value: number) => void;
   blendMode: GlobalCompositeOperation;
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
+  onExportPNG: () => void;
+  onExportLink: () => void;
 }
 
 export const ControlPanel = ({
@@ -31,13 +35,34 @@ export const ControlPanel = ({
   onColorBandWidthChange,
   blendMode,
   onBlendModeChange,
+  onExportPNG,
+  onExportLink,
 }: ControlPanelProps) => {
   return (
-    <Tabs defaultValue="polynomial" className="w-full">
-      <TabsList className="w-full bg-background/50 backdrop-blur-sm">
-        <TabsTrigger value="polynomial" className="flex-1">POLYNOMIAL</TabsTrigger>
-        <TabsTrigger value="style" className="flex-1">STYLE</TabsTrigger>
-      </TabsList>
+    <div className="space-y-3">
+      <Tabs defaultValue="polynomial" className="w-full">
+        <div className="flex gap-2 items-center">
+          <TabsList className="flex-1 bg-background/50 backdrop-blur-sm">
+            <TabsTrigger value="polynomial" className="flex-1">POLYNOMIAL</TabsTrigger>
+            <TabsTrigger value="style" className="flex-1">STYLE</TabsTrigger>
+          </TabsList>
+          <Button
+            onClick={onExportPNG}
+            size="icon"
+            variant="outline"
+            className="bg-background/50 backdrop-blur-sm h-10 w-10"
+          >
+            <Download className="w-4 h-4" />
+          </Button>
+          <Button
+            onClick={onExportLink}
+            size="icon"
+            variant="outline"
+            className="bg-background/50 backdrop-blur-sm h-10 w-10"
+          >
+            <Link className="w-4 h-4" />
+          </Button>
+        </div>
 
       <TabsContent value="polynomial" className="space-y-4 mt-4">
       <div className="space-y-2">
@@ -160,6 +185,7 @@ export const ControlPanel = ({
         </Select>
       </div>
       </TabsContent>
-    </Tabs>
+      </Tabs>
+    </div>
   );
 };

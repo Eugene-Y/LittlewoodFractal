@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
 
 interface Complex {
@@ -17,6 +17,11 @@ interface FractalCanvasProps {
   colorBandWidth: number;
   blendMode: GlobalCompositeOperation;
   onConvergenceStats?: (stats: ConvergenceStats) => void;
+  onExportRequest?: () => void;
+}
+
+export interface FractalCanvasRef {
+  exportToCanvas: () => HTMLCanvasElement | null;
 }
 
 interface ConvergenceStats {
@@ -26,7 +31,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, onConvergenceStats }: FractalCanvasProps) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -54,6 +59,48 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
 
   // Fixed viewport for consistent scaling
   const VIEWPORT_SIZE = 6; // Shows from -3 to 3 on both axes
+
+  // Expose export method via ref
+  useImperativeHandle(ref, () => ({
+    exportToCanvas: () => {
+      const offscreenCanvas = offscreenCanvasRef.current;
+      const canvas = canvasRef.current;
+      if (!offscreenCanvas || !canvas) return null;
+
+      // Create a new canvas for export
+      const exportCanvas = document.createElement('canvas');
+      exportCanvas.width = canvas.width;
+      exportCanvas.height = canvas.height;
+      const exportCtx = exportCanvas.getContext('2d');
+      if (!exportCtx) return null;
+
+      // Clear with dark background
+      exportCtx.fillStyle = "#0a0a14";
+      exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+      // Draw accumulated roots from offscreen canvas
+      exportCtx.drawImage(offscreenCanvas, 0, 0);
+
+      // Draw coefficient dots as white rings (same as in compositeFrame)
+      const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+      const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
+      const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
+      const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
+
+      coefficients.forEach((coeff) => {
+        const x = toCanvasX(coeff.re);
+        const y = toCanvasY(coeff.im);
+
+        exportCtx.strokeStyle = 'white';
+        exportCtx.lineWidth = 3;
+        exportCtx.beginPath();
+        exportCtx.arc(x, y, baseRadius, 0, 2 * Math.PI);
+        exportCtx.stroke();
+      });
+
+      return exportCanvas;
+    }
+  }));
 
   // Update canvas size to fill screen
   useEffect(() => {
@@ -746,4 +793,6 @@ export const FractalCanvas = ({ degree, coefficients, onCoefficientsChange, onRe
       )}
     </div>
   );
-};
+});
+
+FractalCanvas.displayName = 'FractalCanvas';

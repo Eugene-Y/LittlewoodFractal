@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { FractalCanvas } from "@/components/FractalCanvas";
+import { useState, useRef } from "react";
+import { FractalCanvas, FractalCanvasRef } from "@/components/FractalCanvas";
 import { ControlPanel } from "@/components/ControlPanel";
 
 interface Complex {
@@ -15,6 +15,7 @@ interface ConvergenceStats {
 }
 
 const Index = () => {
+  const fractalCanvasRef = useRef<FractalCanvasRef>(null);
   const [degree, setDegree] = useState(6);
   const [maxRoots, setMaxRoots] = useState(10000);
   const [transparency, setTransparency] = useState(0.9);
@@ -25,6 +26,39 @@ const Index = () => {
     { re: 1, im: 0 },
     { re: -1, im: 0 },
   ]);
+
+  const handleExportPNG = () => {
+    const exportCanvas = fractalCanvasRef.current?.exportToCanvas();
+    if (!exportCanvas) return;
+
+    // Generate timestamp: ГГГГММДД_ЧЧММСС_ММС
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const seconds = String(now.getSeconds()).padStart(2, '0');
+    const milliseconds = String(now.getMilliseconds()).padStart(3, '0');
+    const timestamp = `${year}${month}${day}_${hours}${minutes}${seconds}_${milliseconds}`;
+    const filename = `littlewood_${timestamp}.png`;
+
+    // Convert canvas to blob and download
+    exportCanvas.toBlob((blob) => {
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      link.click();
+      URL.revokeObjectURL(url);
+    });
+  };
+
+  const handleExportLink = () => {
+    // TODO: Implement link export with URL parameters
+    console.log('Export link not yet implemented');
+  };
 
   const handleCoefficientCountChange = (count: number) => {
     const newCoeffs = [...coefficients];
@@ -45,6 +79,7 @@ const Index = () => {
     <div className="relative w-full h-screen overflow-hidden bg-background">
       {/* Fullscreen Canvas */}
       <FractalCanvas
+        ref={fractalCanvasRef}
         degree={degree}
         coefficients={coefficients}
         onCoefficientsChange={setCoefficients}
@@ -70,6 +105,8 @@ const Index = () => {
           onColorBandWidthChange={setColorBandWidth}
           blendMode={blendMode}
           onBlendModeChange={setBlendMode}
+          onExportPNG={handleExportPNG}
+          onExportLink={handleExportLink}
         />
       </aside>
     </div>
