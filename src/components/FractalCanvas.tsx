@@ -453,7 +453,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setCurrentRenderFrame(0);
 
     const ctx = canvas.getContext("2d");
-    const offscreenCtx = offscreenCanvas.getContext("2d", { alpha: true });
+    const offscreenCtx = offscreenCanvas.getContext("2d", {
+      alpha: true,
+      desynchronized: true,  // Allow desync for better performance
+      willReadFrequently: false  // We only write, never read pixels
+    });
     if (!ctx || !offscreenCtx) return;
 
     // Clear offscreen canvas (transparent background for roots accumulation)
@@ -590,8 +594,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
               const hue = hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
 
               // Simple solid color rendering (most performant)
+              // Round coordinates to integer pixels for faster rendering
               offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
-              offscreenCtx.fillRect(x - 1, y - 1, 2, 2);
+              offscreenCtx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
 
               processedRoots++;
             });
@@ -715,6 +720,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       return;
     }
 
+    // Disable antialiasing for better performance
+    snapshotCtx.imageSmoothingEnabled = false;
+
     // Copy current offscreen canvas to snapshot
     snapshotCtx.clearRect(0, 0, snapshotCanvasRef.current.width, snapshotCanvasRef.current.height);
     snapshotCtx.drawImage(offscreenCanvas, 0, 0);
@@ -747,6 +755,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
+
+    // Disable antialiasing for better performance
+    ctx.imageSmoothingEnabled = false;
 
     const dpr = window.devicePixelRatio || 1;
     const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
