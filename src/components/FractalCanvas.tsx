@@ -539,6 +539,13 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const toCanvasX = (re: number) => canvas.width / 2 + (re - offsetX) * scale;
     const toCanvasY = (im: number) => canvas.height / 2 - (im - offsetY) * scale;
 
+    // Viewport culling bounds (skip rendering roots outside visible area)
+    const margin = 2;
+    const minX = -margin;
+    const maxX = canvas.width + margin;
+    const minY = -margin;
+    const maxY = canvas.height + margin;
+
     // Frame processing function (processes BATCH_SIZE polynomials per frame)
     const processFrame = () => {
       // Check if this render has been cancelled (ID changed)
@@ -567,6 +574,12 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
             // Draw roots immediately on offscreen canvas
             result.roots.forEach((root, rootIndex) => {
+              const x = toCanvasX(root.re);
+              const y = toCanvasY(root.im);
+
+              // Viewport culling: skip roots outside visible area
+              if (x < minX || x > maxX || y < minY || y > maxY) return;
+
               // Calculate hue with interpolation between frame-local and global indexing
               // colorBandWidth: 0.0 = per frame, 1.0 = across all roots
               const theoreticalRootIndex = polynomialIndex * degree + rootIndex;
@@ -577,9 +590,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
               const hueLocal = (indexWithinFrame / frameSize) * 360; // Repeats per frame
               const hueGlobal = (theoreticalRootIndex / effectiveRootsForColor) * 360; // Spans all roots
               const hue = hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
-
-              const x = toCanvasX(root.re);
-              const y = toCanvasY(root.im);
 
               // Simple solid color rendering (most performant)
               offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
