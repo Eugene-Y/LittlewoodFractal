@@ -255,12 +255,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     );
 
     if (shouldRender) {
-      // Block rendering during interactive transform to preserve snapshot
-      if (isInteractiveTransform) {
-        console.log('[Render] Blocking render during interactive transform');
-        return;
-      }
-
       // Update previous render params
       previousRenderParams.current = {
         framesToRender,
@@ -275,9 +269,12 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         zoom
       };
 
+      // Always render in background, even during interactive transforms
+      // Snapshot will be shown to user for instant feedback, but offscreen canvas
+      // will be updated in background and displayed when gesture ends
       renderFractal();
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom, isInteractiveTransform]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom]);
 
 
   // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
@@ -603,9 +600,12 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
           currentPolynomialIndex++;
         }
 
-      // Update root count and composite to main canvas only after processing
+      // Update root count and progress
       setRootCount(processedRoots);
-      compositeFrame(progress, currentFrame);
+      setRenderProgress(progress);
+
+      // Redraw overlay (will use snapshot if interactive transform is active)
+      redrawCoordinateOverlay();
 
       // Continue or finish
       if (currentPolynomialIndex < polynomialsToRender) {
@@ -614,6 +614,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         // Rendering complete
         setIsRendering(false);
         setRenderProgress(100);
+
+        // Final redraw
+        redrawCoordinateOverlay();
 
         // Report final convergence stats
         if (onConvergenceStats) {
@@ -626,171 +629,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         }
 
         onRenderComplete?.();
-      }
-    };
-
-    // Helper to composite offscreen canvas + UI to main canvas
-    const compositeFrame = (currentProgress: number, frame: number) => {
-      if (!ctx || !canvas) return;
-
-      const dpr = window.devicePixelRatio || 1;
-
-      // Dynamic tick spacing and range based on zoom level
-      const viewportWidth = VIEWPORT_SIZE / zoom;
-      const viewportHeight = VIEWPORT_SIZE / zoom;
-
-      // Calculate appropriate tick spacing - aim for ~5 ticks per axis
-      // Use only powers of 10 (1, 10, 100, 1000...) or fractions (0.1, 0.01, 0.001...)
-      const baseSpacing = Math.pow(10, Math.floor(Math.log10(viewportWidth / 5)));
-      const tickSpacing = baseSpacing;
-
-      // Calculate visible range with padding
-      const startRe = Math.floor((offsetX - viewportWidth / 2) / tickSpacing) * tickSpacing;
-      const endRe = Math.ceil((offsetX + viewportWidth / 2) / tickSpacing) * tickSpacing;
-      const startIm = Math.floor((offsetY - viewportHeight / 2) / tickSpacing) * tickSpacing;
-      const endIm = Math.ceil((offsetY + viewportHeight / 2) / tickSpacing) * tickSpacing;
-
-      // Composite: Clear main canvas and draw background
-      ctx.fillStyle = "#0a0a14";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw accumulated roots from offscreen canvas
-      ctx.drawImage(offscreenCanvas, 0, 0);
-
-      // Draw axes on main canvas
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(toCanvasX(0), 0);
-      ctx.lineTo(toCanvasX(0), canvas.height);
-      ctx.moveTo(0, toCanvasY(0));
-      ctx.lineTo(canvas.width, toCanvasY(0));
-      ctx.stroke();
-
-      // Draw tickmarks and labels on main canvas
-      ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-      ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-      ctx.textAlign = "center";
-      ctx.textBaseline = "top";
-
-      // X-axis tickmarks
-      for (let re = startRe; re <= endRe; re += tickSpacing) {
-        if (Math.abs(re) < tickSpacing / 10) continue; // Skip zero
-        const x = toCanvasX(re);
-        const y0 = toCanvasY(0);
-        if (x >= 0 && x <= canvas.width) {
-          // Tick mark
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(x, y0 - 5);
-          ctx.lineTo(x, y0 + 5);
-          ctx.stroke();
-
-          // Label - format number appropriately
-          const label = tickSpacing < 1 ? re.toFixed(Math.max(0, -Math.log10(tickSpacing))) : re.toString();
-          const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
-          ctx.fillText(label, x, labelY);
-        }
-      }
-
-      // Y-axis tickmarks
-      ctx.textAlign = "left";
-      ctx.textBaseline = "middle";
-      for (let im = startIm; im <= endIm; im += tickSpacing) {
-        if (Math.abs(im) < tickSpacing / 10) continue; // Skip zero
-        const y = toCanvasY(im);
-        const x0 = toCanvasX(0);
-        if (y >= 0 && y <= canvas.height) {
-          // Tick mark
-          ctx.strokeStyle = "rgba(255, 255, 255, 0.5)";
-          ctx.lineWidth = 2;
-          ctx.beginPath();
-          ctx.moveTo(x0 - 5, y);
-          ctx.lineTo(x0 + 5, y);
-          ctx.stroke();
-
-          // Label - format number appropriately
-          const numStr = tickSpacing < 1 ? im.toFixed(Math.max(0, -Math.log10(tickSpacing))) : im.toString();
-          const label = numStr + "i";
-          const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
-          ctx.fillText(label, labelX, y);
-        }
-      }
-
-      // Draw coefficient dots as double rings (black + white) on main canvas (responsive sizing)
-      const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
-
-      coefficients.forEach((coeff, index) => {
-        const x = toCanvasX(coeff.re);
-        const y = toCanvasY(coeff.im);
-
-        // Highlight if hovered or dragged
-        const isActive = index === hoveredIndex || index === draggedIndex;
-        const radius = isActive ? baseRadius * 1.4 : baseRadius;
-        const lineWidth = isActive ? 4 : 3;
-
-        // Draw black ring (outer)
-        ctx.strokeStyle = 'black';
-        ctx.lineWidth = lineWidth + 2;
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, 2 * Math.PI);
-        ctx.stroke();
-
-        // Draw white ring (inner)
-        ctx.strokeStyle = 'white';
-        ctx.lineWidth = lineWidth;
-        ctx.beginPath();
-        ctx.arc(x, y, radius, 0, 2 * Math.PI);
-        ctx.stroke();
-      });
-
-      // Draw coordinates at mouse position
-      if (mousePos) {
-        const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
-        const mouseRe = (mousePos.x - canvas.width / 2) / scale;
-        const mouseIm = -(mousePos.y - canvas.height / 2) / scale;
-
-        let coordText: string;
-
-        // If dragging, show coefficient coordinates, otherwise show mouse coordinates
-        if (draggedIndex !== null) {
-          const coeff = coefficients[draggedIndex];
-          coordText = `${coeff.re.toFixed(3)} ${coeff.im >= 0 ? '+' : ''}${coeff.im.toFixed(3)}i`;
-        } else {
-          coordText = `${mouseRe.toFixed(3)} ${mouseIm >= 0 ? '+' : ''}${mouseIm.toFixed(3)}i`;
-        }
-
-        ctx.font = `${14 * dpr}px monospace`;
-        ctx.textAlign = 'left';
-        ctx.textBaseline = 'top';
-
-        // Draw text background
-        const textMetrics = ctx.measureText(coordText);
-        const textWidth = textMetrics.width;
-        const textHeight = 14 * dpr;
-        const padding = 4 * dpr;
-
-        const textX = mousePos.x + 15 * dpr;
-        const textY = mousePos.y + 15 * dpr;
-
-        ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-        ctx.fillRect(textX - padding, textY - padding, textWidth + padding * 2, textHeight + padding * 2);
-
-        // Draw text
-        ctx.fillStyle = 'white';
-        ctx.fillText(coordText, textX, textY);
-      }
-
-      // Draw progress indicator in bottom-right corner
-      if (currentProgress > 0 && currentProgress < 100) {
-        const padding = 20 * dpr; // Scale padding with device pixel ratio
-
-        ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
-        ctx.font = `${14 * dpr}px monospace`;
-        ctx.textAlign = "right";
-        ctx.textBaseline = "bottom";
-        ctx.fillText(`Frame ${frame} - ${currentProgress.toFixed(3)}%`, canvas.width - padding, canvas.height - padding);
       }
     };
 
@@ -890,11 +728,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
   // Helper function to end interactive transform
   const endInteractiveTransform = () => {
+    console.log('[Snapshot] Ending interactive transform');
     setIsInteractiveTransform(false);
     snapshotParamsRef.current = null;
-    // Note: No need to manually trigger renderFractal here
-    // The useEffect will automatically run when isInteractiveTransform becomes false
-    // and it will detect parameter changes and render if needed
+    // Trigger immediate redraw to show updated offscreen canvas
+    redrawCoordinateOverlay();
   };
 
   // Helper function to redraw the coordinate overlay
@@ -921,9 +759,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       const snapshot = snapshotCanvasRef.current;
       const snapshotParams = snapshotParamsRef.current;
 
-      console.log('[Redraw] Using snapshot, isInteractive:', isInteractiveTransform);
+      console.log('[Redraw] Using snapshot + offscreen, isInteractive:', isInteractiveTransform);
 
-      // Calculate transformation from snapshot coords to current coords
+      // FIRST: Draw transformed snapshot for instant feedback
       const snapshotBaseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
       const snapshotScale = snapshotBaseScale * snapshotParams.zoom;
       const currentScale = baseScale * zoom;
@@ -940,8 +778,13 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.translate(-canvas.width / 2, -canvas.height / 2);
       ctx.drawImage(snapshot, 0, 0);
       ctx.restore();
+
+      // SECOND: Draw current offscreen canvas on top to show rendering progress
+      // This shows new roots being added in real-time during the gesture
+      // Both canvases have transparent backgrounds, so they blend naturally
+      ctx.drawImage(offscreenCanvas, 0, 0);
     } else {
-      console.log('[Redraw] Using offscreen canvas, isInteractive:', isInteractiveTransform);
+      console.log('[Redraw] Using offscreen canvas only, isInteractive:', isInteractiveTransform);
       // Normal rendering: draw accumulated roots from offscreen canvas
       ctx.drawImage(offscreenCanvas, 0, 0);
     }
@@ -1081,6 +924,17 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // Draw text
       ctx.fillStyle = 'white';
       ctx.fillText(coordText, textX, textY);
+    }
+
+    // Draw progress indicator in bottom-right corner (using state from renderFractal)
+    if (isRendering && renderProgress > 0 && renderProgress < 100) {
+      const padding = 20 * dpr;
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+      ctx.font = `${14 * dpr}px monospace`;
+      ctx.textAlign = "right";
+      ctx.textBaseline = "bottom";
+      ctx.fillText(`${renderProgress.toFixed(1)}%`, canvas.width - padding, canvas.height - padding);
     }
   };
 
