@@ -65,6 +65,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
+  const [currentRenderFrame, setCurrentRenderFrame] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
   const previousRenderParams = useRef<{
     framesToRender: number;
@@ -449,6 +450,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     renderingRef.current = { id: currentRenderId };
     setIsRendering(true);
     setRenderProgress(0);
+    setCurrentRenderFrame(0);
 
     const ctx = canvas.getContext("2d");
     const offscreenCtx = offscreenCanvas.getContext("2d", { alpha: true });
@@ -551,7 +553,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // Update progress
       currentFrame++;
       const progress = (currentFrame / framesToRender) * 100;
-      setRenderProgress(progress);
 
       // Process BATCH_SIZE polynomials with sparse indices (every skipInterval-th polynomial)
       let processedInThisFrame = 0;
@@ -603,20 +604,23 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // Update root count and progress
       setRootCount(processedRoots);
       setRenderProgress(progress);
+      setCurrentRenderFrame(currentFrame);
 
-      // Redraw overlay (will use snapshot if interactive transform is active)
-      redrawCoordinateOverlay();
+      // Redraw overlay with current values (will use snapshot if interactive transform is active)
+      redrawCoordinateOverlay(progress, currentFrame, true);
 
       // Continue or finish
       if (currentPolynomialIndex < polynomialsToRender) {
         renderingRef.current.animationId = requestAnimationFrame(processFrame);
       } else {
         // Rendering complete
-        setIsRendering(false);
         setRenderProgress(100);
 
-        // Final redraw
-        redrawCoordinateOverlay();
+        // Final redraw without progress indicator (pass false for isRendering)
+        redrawCoordinateOverlay(100, currentFrame, false);
+
+        // Clear rendering flag after final redraw
+        setIsRendering(false);
 
         // Report final convergence stats
         if (onConvergenceStats) {
@@ -736,7 +740,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   };
 
   // Helper function to redraw the coordinate overlay
-  const redrawCoordinateOverlay = () => {
+  const redrawCoordinateOverlay = (currentProgress?: number, currentFrame?: number, currentIsRendering?: boolean) => {
     const canvas = canvasRef.current;
     const offscreenCanvas = offscreenCanvasRef.current;
     if (!canvas || !offscreenCanvas) return;
@@ -926,15 +930,20 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.fillText(coordText, textX, textY);
     }
 
-    // Draw progress indicator in bottom-right corner (using state from renderFractal)
-    if (isRendering && renderProgress > 0 && renderProgress < 100) {
+    // Draw progress indicator in bottom-right corner
+    // Use passed parameters if available (during rendering), otherwise use state
+    const displayProgress = currentProgress !== undefined ? currentProgress : renderProgress;
+    const displayFrame = currentFrame !== undefined ? currentFrame : currentRenderFrame;
+    const displayIsRendering = currentIsRendering !== undefined ? currentIsRendering : isRendering;
+
+    if (displayIsRendering && displayProgress > 0 && displayProgress < 100) {
       const padding = 20 * dpr;
 
       ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
       ctx.font = `${14 * dpr}px monospace`;
       ctx.textAlign = "right";
       ctx.textBaseline = "bottom";
-      ctx.fillText(`${renderProgress.toFixed(1)}%`, canvas.width - padding, canvas.height - padding);
+      ctx.fillText(`Frame ${displayFrame} - ${displayProgress.toFixed(3)}%`, canvas.width - padding, canvas.height - padding);
     }
   };
 
