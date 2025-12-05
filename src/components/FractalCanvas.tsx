@@ -195,7 +195,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         if (!isInteractiveTransform) {
           createSnapshot();
         }
-        const newZoom = Math.max(0.1, Math.min(100, zoom * 2));
+        const newZoom = zoom * 2;
         onZoomChange(newZoom);
       }
       // - or _ key - zoom out 2x
@@ -204,7 +204,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         if (!isInteractiveTransform) {
           createSnapshot();
         }
-        const newZoom = Math.max(0.1, Math.min(100, zoom / 2));
+        const newZoom = zoom / 2;
         onZoomChange(newZoom);
       }
     };
@@ -1136,7 +1136,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
       // Zoom factor: smaller deltaY = zoom in, larger = zoom out
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
-      const newZoom = Math.max(0.1, Math.min(100, zoom * zoomFactor));
+      const newZoom = zoom * zoomFactor;
 
       onZoomChange(newZoom);
 
@@ -1212,7 +1212,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       );
 
       const zoomFactor = distance / lastTouchDistance;
-      const newZoom = Math.max(0.1, Math.min(100, zoom * zoomFactor));
+      const newZoom = zoom * zoomFactor;
 
       onZoomChange(newZoom);
       setLastTouchDistance(distance);
