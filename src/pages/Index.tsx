@@ -164,8 +164,8 @@ const Index = () => {
     // Parse max roots (max)
     const maxParam = params.get('max');
     if (maxParam) {
-      const parsedMax = parseInt(maxParam, 10);
-      if (!isNaN(parsedMax) && parsedMax >= 1000 && parsedMax <= 5000000000) {
+      const parsedMax = Number(maxParam);
+      if (!isNaN(parsedMax) && Number.isInteger(parsedMax) && parsedMax > 0) {
         setMaxRoots(parsedMax);
       }
     }
