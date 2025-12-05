@@ -35,8 +35,8 @@ const indexToBlendMode = (index: number): GlobalCompositeOperation => {
 
 const Index = () => {
   const fractalCanvasRef = useRef<FractalCanvasRef>(null);
-  const [degree, setDegree] = useState(6);
-  const [maxRoots, setMaxRoots] = useState(10000);
+  const [degree, setDegree] = useState(7);
+  const [maxRoots, setMaxRoots] = useState(20000);
   const [transparency, setTransparency] = useState(0.9);
   const [colorBandWidth, setColorBandWidth] = useState(1.0); // 0.0 = batch size, 1.0 = total roots
   const [blendMode, setBlendMode] = useState<GlobalCompositeOperation>('source-over');
@@ -47,6 +47,7 @@ const Index = () => {
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
     { re: -1, im: 0 },
+    { re: 0, im: 0 },
   ]);
 
   const handleExportPNG = () => {
