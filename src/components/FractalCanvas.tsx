@@ -625,12 +625,20 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
       const dpr = window.devicePixelRatio || 1;
 
-      // Integer ticks only, extended range
-      const tickSpacing = 1;
-      const startRe = -10;
-      const endRe = 10;
-      const startIm = -10;
-      const endIm = 10;
+      // Dynamic tick spacing and range based on zoom level
+      const viewportWidth = VIEWPORT_SIZE / zoom;
+      const viewportHeight = VIEWPORT_SIZE / zoom;
+
+      // Calculate appropriate tick spacing - aim for ~5 ticks per axis
+      // Use only powers of 10 (1, 10, 100, 1000...) or fractions (0.1, 0.01, 0.001...)
+      const baseSpacing = Math.pow(10, Math.floor(Math.log10(viewportWidth / 5)));
+      const tickSpacing = baseSpacing;
+
+      // Calculate visible range with padding
+      const startRe = Math.floor((offsetX - viewportWidth / 2) / tickSpacing) * tickSpacing;
+      const endRe = Math.ceil((offsetX + viewportWidth / 2) / tickSpacing) * tickSpacing;
+      const startIm = Math.floor((offsetY - viewportHeight / 2) / tickSpacing) * tickSpacing;
+      const endIm = Math.ceil((offsetY + viewportHeight / 2) / tickSpacing) * tickSpacing;
 
       // Composite: Clear main canvas and draw background
       ctx.fillStyle = "#0a0a14";
@@ -651,13 +659,13 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
       // Draw tickmarks and labels on main canvas
       ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-      ctx.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+      ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
       ctx.textAlign = "center";
       ctx.textBaseline = "top";
 
       // X-axis tickmarks
       for (let re = startRe; re <= endRe; re += tickSpacing) {
-        if (Math.abs(re) < tickSpacing / 2) continue; // Skip zero
+        if (Math.abs(re) < tickSpacing / 10) continue; // Skip zero
         const x = toCanvasX(re);
         const y0 = toCanvasY(0);
         if (x >= 0 && x <= canvas.width) {
@@ -669,8 +677,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
           ctx.lineTo(x, y0 + 5);
           ctx.stroke();
 
-          // Label
-          const label = re.toString();
+          // Label - format number appropriately
+          const label = tickSpacing < 1 ? re.toFixed(Math.max(0, -Math.log10(tickSpacing))) : re.toString();
           const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
           ctx.fillText(label, x, labelY);
         }
@@ -680,7 +688,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.textAlign = "left";
       ctx.textBaseline = "middle";
       for (let im = startIm; im <= endIm; im += tickSpacing) {
-        if (Math.abs(im) < tickSpacing / 2) continue; // Skip zero
+        if (Math.abs(im) < tickSpacing / 10) continue; // Skip zero
         const y = toCanvasY(im);
         const x0 = toCanvasX(0);
         if (y >= 0 && y <= canvas.height) {
@@ -692,8 +700,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
           ctx.lineTo(x0 + 5, y);
           ctx.stroke();
 
-          // Label
-          const label = im.toString() + "i";
+          // Label - format number appropriately
+          const numStr = tickSpacing < 1 ? im.toFixed(Math.max(0, -Math.log10(tickSpacing))) : im.toString();
+          const label = numStr + "i";
           const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
           ctx.fillText(label, labelX, y);
         }
@@ -942,19 +951,28 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
     // Draw tickmarks and labels
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
-    ctx.font = "11px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+    ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
-    const tickSpacing = 1;
-    const startRe = -10;
-    const endRe = 10;
-    const startIm = -10;
-    const endIm = 10;
+    // Dynamic tick spacing and range based on zoom level
+    const viewportWidth = VIEWPORT_SIZE / zoom;
+    const viewportHeight = VIEWPORT_SIZE / zoom;
+
+    // Calculate appropriate tick spacing - aim for ~5 ticks per axis
+    // Use only powers of 10 (1, 10, 100, 1000...) or fractions (0.1, 0.01, 0.001...)
+    const baseSpacing = Math.pow(10, Math.floor(Math.log10(viewportWidth / 5)));
+    const tickSpacing = baseSpacing;
+
+    // Calculate visible range with padding
+    const startRe = Math.floor((offsetX - viewportWidth / 2) / tickSpacing) * tickSpacing;
+    const endRe = Math.ceil((offsetX + viewportWidth / 2) / tickSpacing) * tickSpacing;
+    const startIm = Math.floor((offsetY - viewportHeight / 2) / tickSpacing) * tickSpacing;
+    const endIm = Math.ceil((offsetY + viewportHeight / 2) / tickSpacing) * tickSpacing;
 
     // X-axis tickmarks
     ctx.textAlign = "center";
     ctx.textBaseline = "top";
     for (let re = startRe; re <= endRe; re += tickSpacing) {
-      if (Math.abs(re) < tickSpacing / 2) continue;
+      if (Math.abs(re) < tickSpacing / 10) continue;
       const x = toCanvasX(re);
       const y0 = toCanvasY(0);
       if (x >= 0 && x <= canvas.width) {
@@ -965,7 +983,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         ctx.lineTo(x, y0 + 5);
         ctx.stroke();
 
-        const label = re.toString();
+        const label = tickSpacing < 1 ? re.toFixed(Math.max(0, -Math.log10(tickSpacing))) : re.toString();
         const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
         ctx.fillText(label, x, labelY);
       }
@@ -975,7 +993,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     ctx.textAlign = "left";
     ctx.textBaseline = "middle";
     for (let im = startIm; im <= endIm; im += tickSpacing) {
-      if (Math.abs(im) < tickSpacing / 2) continue;
+      if (Math.abs(im) < tickSpacing / 10) continue;
       const y = toCanvasY(im);
       const x0 = toCanvasX(0);
       if (y >= 0 && y <= canvas.height) {
@@ -986,7 +1004,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         ctx.lineTo(x0 + 5, y);
         ctx.stroke();
 
-        const label = im.toString() + "i";
+        const numStr = tickSpacing < 1 ? im.toFixed(Math.max(0, -Math.log10(tickSpacing))) : im.toString();
+        const label = numStr + "i";
         const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
         ctx.fillText(label, labelX, y);
       }
