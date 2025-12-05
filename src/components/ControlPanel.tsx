@@ -3,6 +3,7 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Download, Link } from "lucide-react";
 
 interface ControlPanelProps {
@@ -18,6 +19,8 @@ interface ControlPanelProps {
   onColorBandWidthChange: (value: number) => void;
   blendMode: GlobalCompositeOperation;
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
+  hdrMode: boolean;
+  onHdrModeChange: (value: boolean) => void;
   onExportPNG: () => void;
   onExportLink: () => void;
 }
@@ -35,6 +38,8 @@ export const ControlPanel = ({
   onColorBandWidthChange,
   blendMode,
   onBlendModeChange,
+  hdrMode,
+  onHdrModeChange,
   onExportPNG,
   onExportLink,
 }: ControlPanelProps) => {
@@ -167,11 +172,22 @@ export const ControlPanel = ({
         />
       </div>
 
+      <div className="flex items-center justify-between">
+        <Label htmlFor="hdr-mode-switch" className="text-sm font-normal text-foreground">
+          HDR Mode (Experimental)
+        </Label>
+        <Switch
+          id="hdr-mode-switch"
+          checked={hdrMode}
+          onCheckedChange={onHdrModeChange}
+        />
+      </div>
+
       <div className="flex items-center gap-3">
         <Label htmlFor="blend-mode-select" className="text-sm font-normal text-foreground whitespace-nowrap">
           Blend Mode
         </Label>
-        <Select value={blendMode} onValueChange={(value) => onBlendModeChange(value as GlobalCompositeOperation)}>
+        <Select value={blendMode} onValueChange={(value) => onBlendModeChange(value as GlobalCompositeOperation)} disabled={hdrMode}>
           <SelectTrigger id="blend-mode-select" className="flex-1">
             <SelectValue />
           </SelectTrigger>

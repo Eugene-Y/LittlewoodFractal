@@ -24,6 +24,7 @@ interface FractalCanvasProps {
   onResetView: () => void;
   onConvergenceStats?: (stats: ConvergenceStats) => void;
   onExportRequest?: () => void;
+  hdrMode: boolean;
 }
 
 export interface FractalCanvasRef {
@@ -37,10 +38,16 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, onOffsetChange, onZoomChange, onResetView, onConvergenceStats, hdrMode }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+
+  // HDR accumulation buffers
+  const hdrIntensityBuffer = useRef<Float32Array | null>(null);
+  const hdrHueBuffer = useRef<Uint16Array | null>(null);
+  const hdrMaxIntensity = useRef<number>(0);
+
   const [isRendering, setIsRendering] = useState(false);
   const [rootCount, setRootCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -78,6 +85,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     offsetX: number;
     offsetY: number;
     zoom: number;
+    hdrMode: boolean;
   }>({
     framesToRender: 0,
     degree: 0,
@@ -88,7 +96,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     canvasSize: { width: 0, height: 0 },
     offsetX: 0,
     offsetY: 0,
-    zoom: 1
+    zoom: 1,
+    hdrMode: false
   });
   const BATCH_SIZE = 2048; // Process 2048 polynomials per frame
 
@@ -166,6 +175,12 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         }
         offscreenCanvasRef.current.width = newWidth;
         offscreenCanvasRef.current.height = newHeight;
+
+        // Initialize HDR accumulation buffers
+        const pixelCount = newWidth * newHeight;
+        hdrIntensityBuffer.current = new Float32Array(pixelCount);
+        hdrHueBuffer.current = new Uint16Array(pixelCount);
+        hdrMaxIntensity.current = 0;
 
         // Detect mobile based on screen size
         setIsMobile(window.innerWidth < 768);
@@ -252,7 +267,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       prev.offsetX !== offsetX ||
       prev.offsetY !== offsetY ||
       prev.zoom !== zoom ||
-      prev.framesToRender !== framesToRender
+      prev.framesToRender !== framesToRender ||
+      prev.hdrMode !== hdrMode
     );
 
     if (shouldRender) {
@@ -267,7 +283,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         canvasSize: { ...canvasSize },
         offsetX,
         offsetY,
-        zoom
+        zoom,
+        hdrMode
       };
 
       // Always render in background, even during interactive transforms
@@ -275,7 +292,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // will be updated in background and displayed when gesture ends
       renderFractal();
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom, hdrMode]);
 
 
   // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
@@ -463,8 +480,15 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Clear offscreen canvas (transparent background for roots accumulation)
     offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
 
+    // Clear HDR buffers if in HDR mode
+    if (hdrMode && hdrIntensityBuffer.current && hdrHueBuffer.current) {
+      hdrIntensityBuffer.current.fill(0);
+      hdrHueBuffer.current.fill(0);
+      hdrMaxIntensity.current = 0;
+    }
+
     // Set composite operation to blend semi-transparent pixels
-    offscreenCtx.globalCompositeOperation = blendMode;
+    offscreenCtx.globalCompositeOperation = hdrMode ? 'source-over' : blendMode;
 
     // Disable antialiasing for better performance
     offscreenCtx.imageSmoothingEnabled = false;
@@ -549,6 +573,78 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const minY = -margin;
     const maxY = canvas.height + margin;
 
+    // HSL to RGB conversion helper
+    const hslToRgb = (h: number, s: number, l: number): [number, number, number] => {
+      const c = (1 - Math.abs(2 * l - 1)) * s;
+      const x = c * (1 - Math.abs(((h / 60) % 2) - 1));
+      const m = l - c / 2;
+      let r = 0, g = 0, b = 0;
+
+      if (h >= 0 && h < 60) { r = c; g = x; b = 0; }
+      else if (h >= 60 && h < 120) { r = x; g = c; b = 0; }
+      else if (h >= 120 && h < 180) { r = 0; g = c; b = x; }
+      else if (h >= 180 && h < 240) { r = 0; g = x; b = c; }
+      else if (h >= 240 && h < 300) { r = x; g = 0; b = c; }
+      else if (h >= 300 && h < 360) { r = c; g = 0; b = x; }
+
+      return [Math.round((r + m) * 255), Math.round((g + m) * 255), Math.round((b + m) * 255)];
+    };
+
+    // HDR tone mapping function
+    const applyHDRToneMapping = () => {
+      if (!hdrIntensityBuffer.current || !hdrHueBuffer.current || !offscreenCtx) return;
+
+      const width = offscreenCanvas.width;
+      const height = offscreenCanvas.height;
+      const imageData = offscreenCtx.createImageData(width, height);
+      const data = imageData.data;
+      const maxIntensity = hdrMaxIntensity.current;
+
+      if (maxIntensity === 0) {
+        console.log('[HDR] maxIntensity is 0, skipping tone mapping');
+        return;
+      }
+
+      console.log('[HDR] Applying tone mapping, maxIntensity:', maxIntensity);
+
+      let nonZeroPixels = 0;
+
+      // Apply logarithmic tone mapping
+      for (let i = 0; i < hdrIntensityBuffer.current.length; i++) {
+        const idx = i * 4;
+        const intensity = hdrIntensityBuffer.current[i];
+
+        if (intensity > 0) {
+          nonZeroPixels++;
+
+          // Logarithmic compression: log(1+x) / log(1+max)
+          const normalizedIntensity = Math.log1p(intensity) / Math.log1p(maxIntensity);
+
+          // Get hue for this pixel
+          const hue = hdrHueBuffer.current[i] / 100;
+
+          // Convert HSL to RGB (S=100%, L=normalizedIntensity*60%)
+          // Увеличим яркость до 80% для лучшей видимости
+          const [r, g, b] = hslToRgb(hue, 1.0, Math.min(1.0, normalizedIntensity * 0.8 + 0.2));
+
+          data[idx] = r;
+          data[idx + 1] = g;
+          data[idx + 2] = b;
+          data[idx + 3] = 255;
+        } else {
+          // Set transparent for empty pixels
+          data[idx] = 0;
+          data[idx + 1] = 0;
+          data[idx + 2] = 0;
+          data[idx + 3] = 0;
+        }
+      }
+
+      console.log('[HDR] Non-zero pixels:', nonZeroPixels);
+
+      offscreenCtx.putImageData(imageData, 0, 0);
+    };
+
     // Frame processing function (processes BATCH_SIZE polynomials per frame)
     const processFrame = () => {
       // Check if this render has been cancelled (ID changed)
@@ -593,10 +689,44 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
               const hueGlobal = (theoreticalRootIndex / effectiveRootsForColor) * 360; // Spans all roots
               const hue = hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
 
-              // Simple solid color rendering (most performant)
-              // Round coordinates to integer pixels for faster rendering
-              offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
-              offscreenCtx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
+              if (hdrMode && hdrIntensityBuffer.current && hdrHueBuffer.current) {
+                // HDR mode: Accumulate intensity in buffer (not on canvas yet)
+                const px = Math.round(x);
+                const py = Math.round(y);
+
+                if (processedRoots < 10) {
+                  console.log('[HDR] Root', processedRoots, 'at canvas coords:', px, py, 'hue:', hue);
+                }
+
+                // Draw 2x2 pixel for each root
+                for (let dy = -1; dy <= 0; dy++) {
+                  for (let dx = -1; dx <= 0; dx++) {
+                    const targetX = px + dx;
+                    const targetY = py + dy;
+
+                    // Bounds check
+                    if (targetX >= 0 && targetX < offscreenCanvas.width &&
+                        targetY >= 0 && targetY < offscreenCanvas.height) {
+                      const idx = targetY * offscreenCanvas.width + targetX;
+
+                      // Always overwrite hue with latest value
+                      hdrHueBuffer.current[idx] = Math.round(hue * 100);
+
+                      // Accumulate intensity (small step: 0.001)
+                      hdrIntensityBuffer.current[idx] += 0.001;
+
+                      // Track max intensity
+                      if (hdrIntensityBuffer.current[idx] > hdrMaxIntensity.current) {
+                        hdrMaxIntensity.current = hdrIntensityBuffer.current[idx];
+                      }
+                    }
+                  }
+                }
+              } else {
+                // Normal mode: Direct canvas rendering
+                offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
+                offscreenCtx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
+              }
 
               processedRoots++;
             });
@@ -611,6 +741,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       setRenderProgress(progress);
       setCurrentRenderFrame(currentFrame);
 
+      // Apply HDR tone mapping if in HDR mode
+      if (hdrMode && hdrIntensityBuffer.current && hdrHueBuffer.current && hdrMaxIntensity.current > 0) {
+        applyHDRToneMapping();
+      }
+
       // Redraw overlay with current values (will use snapshot if interactive transform is active)
       redrawCoordinateOverlay(progress, currentFrame, true);
 
@@ -620,6 +755,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       } else {
         // Rendering complete
         setRenderProgress(100);
+
+        // Apply HDR tone mapping one final time if in HDR mode
+        if (hdrMode && hdrIntensityBuffer.current && hdrHueBuffer.current && hdrMaxIntensity.current > 0) {
+          applyHDRToneMapping();
+        }
 
         // Final redraw without progress indicator (pass false for isRendering)
         redrawCoordinateOverlay(100, currentFrame, false);

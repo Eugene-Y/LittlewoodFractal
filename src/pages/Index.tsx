@@ -40,6 +40,7 @@ const Index = () => {
   const [transparency, setTransparency] = useState(0.9);
   const [colorBandWidth, setColorBandWidth] = useState(1.0); // 0.0 = batch size, 1.0 = total roots
   const [blendMode, setBlendMode] = useState<GlobalCompositeOperation>('source-over');
+  const [hdrMode, setHdrMode] = useState(false);
   const [offsetX, setOffsetX] = useState(0); // Pan offset in complex plane units
   const [offsetY, setOffsetY] = useState(0); // Pan offset in complex plane units
   const [zoom, setZoom] = useState(1); // Zoom level (1 = default, 2 = 2x zoomed in)
@@ -263,6 +264,7 @@ const Index = () => {
         transparency={transparency}
         colorBandWidth={colorBandWidth}
         blendMode={blendMode}
+        hdrMode={hdrMode}
         offsetX={offsetX}
         offsetY={offsetY}
         zoom={zoom}
@@ -286,6 +288,8 @@ const Index = () => {
           onColorBandWidthChange={setColorBandWidth}
           blendMode={blendMode}
           onBlendModeChange={setBlendMode}
+          hdrMode={hdrMode}
+          onHdrModeChange={setHdrMode}
           onExportPNG={handleExportPNG}
           onExportLink={handleExportLink}
         />
