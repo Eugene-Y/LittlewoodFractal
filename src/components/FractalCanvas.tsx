@@ -58,6 +58,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
   const [lastDoubleTapTime, setLastDoubleTapTime] = useState(0);
 
+  // Interactive transform state - snapshot of offscreen canvas before gesture
+  const snapshotCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const snapshotParamsRef = useRef<{ offsetX: number; offsetY: number; zoom: number } | null>(null);
+  const [isInteractiveTransform, setIsInteractiveTransform] = useState(false);
+
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
@@ -187,22 +192,37 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // + or = key (with or without shift) - zoom in 2x
       if (e.key === '+' || e.key === '=') {
         e.preventDefault();
+        if (!isInteractiveTransform) {
+          createSnapshot();
+        }
         const newZoom = Math.max(0.1, Math.min(100, zoom * 2));
         onZoomChange(newZoom);
       }
       // - or _ key - zoom out 2x
       else if (e.key === '-' || e.key === '_') {
         e.preventDefault();
+        if (!isInteractiveTransform) {
+          createSnapshot();
+        }
         const newZoom = Math.max(0.1, Math.min(100, zoom / 2));
         onZoomChange(newZoom);
       }
     };
 
+    const handleKeyUp = (e: KeyboardEvent) => {
+      if (isMobile) return;
+      if (e.key === '+' || e.key === '=' || e.key === '-' || e.key === '_') {
+        endInteractiveTransform();
+      }
+    };
+
     window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('keyup', handleKeyUp);
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [zoom, onZoomChange, isMobile]);
+  }, [zoom, onZoomChange, isMobile, isInteractiveTransform]);
 
   useEffect(() => {
     setErrorMessage(null);
@@ -235,6 +255,12 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     );
 
     if (shouldRender) {
+      // Block rendering during interactive transform to preserve snapshot
+      if (isInteractiveTransform) {
+        console.log('[Render] Blocking render during interactive transform');
+        return;
+      }
+
       // Update previous render params
       previousRenderParams.current = {
         framesToRender,
@@ -251,7 +277,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
       renderFractal();
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom, isInteractiveTransform]);
 
 
   // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
@@ -794,7 +820,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // Dragging a coefficient
       setDraggedIndex(index);
     } else {
-      // Start panning
+      // Start panning - create snapshot for interactive preview
+      createSnapshot();
       setIsPanning(true);
       setPanStart({ x, y, offsetX, offsetY });
     }
@@ -803,6 +830,52 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     // Reset view on double-click
     onResetView();
+  };
+
+  // Helper function to create snapshot of offscreen canvas before interactive transform
+  const createSnapshot = () => {
+    const offscreenCanvas = offscreenCanvasRef.current;
+    if (!offscreenCanvas) {
+      console.log('[Snapshot] No offscreen canvas');
+      return;
+    }
+
+    // Create snapshot canvas if it doesn't exist
+    if (!snapshotCanvasRef.current) {
+      snapshotCanvasRef.current = document.createElement('canvas');
+    }
+
+    snapshotCanvasRef.current.width = offscreenCanvas.width;
+    snapshotCanvasRef.current.height = offscreenCanvas.height;
+
+    const snapshotCtx = snapshotCanvasRef.current.getContext('2d');
+    if (!snapshotCtx) {
+      console.log('[Snapshot] No snapshot context');
+      return;
+    }
+
+    // Copy current offscreen canvas to snapshot
+    snapshotCtx.clearRect(0, 0, snapshotCanvasRef.current.width, snapshotCanvasRef.current.height);
+    snapshotCtx.drawImage(offscreenCanvas, 0, 0);
+
+    // Save current transform params
+    snapshotParamsRef.current = { offsetX, offsetY, zoom };
+    setIsInteractiveTransform(true);
+
+    console.log('[Snapshot] Created snapshot:', {
+      width: snapshotCanvasRef.current.width,
+      height: snapshotCanvasRef.current.height,
+      transform: { offsetX, offsetY, zoom }
+    });
+  };
+
+  // Helper function to end interactive transform
+  const endInteractiveTransform = () => {
+    setIsInteractiveTransform(false);
+    snapshotParamsRef.current = null;
+    // Note: No need to manually trigger renderFractal here
+    // The useEffect will automatically run when isInteractiveTransform becomes false
+    // and it will detect parameter changes and render if needed
   };
 
   // Helper function to redraw the coordinate overlay
@@ -822,8 +895,37 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     ctx.fillStyle = "#0a0a14";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-    // Draw accumulated roots from offscreen canvas
-    ctx.drawImage(offscreenCanvas, 0, 0);
+    // Use snapshot only during interactive transform
+    const useSnapshot = isInteractiveTransform && snapshotCanvasRef.current && snapshotParamsRef.current;
+
+    if (useSnapshot) {
+      const snapshot = snapshotCanvasRef.current;
+      const snapshotParams = snapshotParamsRef.current;
+
+      console.log('[Redraw] Using snapshot, isInteractive:', isInteractiveTransform);
+
+      // Calculate transformation from snapshot coords to current coords
+      const snapshotBaseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+      const snapshotScale = snapshotBaseScale * snapshotParams.zoom;
+      const currentScale = baseScale * zoom;
+
+      // Calculate offset in canvas pixels
+      const deltaOffsetX = (offsetX - snapshotParams.offsetX) * currentScale;
+      const deltaOffsetY = (offsetY - snapshotParams.offsetY) * currentScale;
+      const scaleRatio = currentScale / snapshotScale;
+
+      // Apply transformation and draw snapshot
+      ctx.save();
+      ctx.translate(canvas.width / 2 - deltaOffsetX, canvas.height / 2 + deltaOffsetY);
+      ctx.scale(scaleRatio, scaleRatio);
+      ctx.translate(-canvas.width / 2, -canvas.height / 2);
+      ctx.drawImage(snapshot, 0, 0);
+      ctx.restore();
+    } else {
+      console.log('[Redraw] Using offscreen canvas, isInteractive:', isInteractiveTransform);
+      // Normal rendering: draw accumulated roots from offscreen canvas
+      ctx.drawImage(offscreenCanvas, 0, 0);
+    }
 
     // Draw axes
     ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
@@ -999,6 +1101,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setDraggedIndex(null);
     setIsPanning(false);
     setPanStart(null);
+    endInteractiveTransform();
   };
 
   const handleMouseLeave = () => {
@@ -1007,7 +1110,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setMousePos(null);
     setIsPanning(false);
     setPanStart(null);
+    endInteractiveTransform();
   };
+
+  const wheelTimeoutRef = useRef<number | null>(null);
 
   const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
     // Only respond to mouse wheel (not trackpad gestures)
@@ -1018,11 +1124,26 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     if (isMouseWheel) {
       e.preventDefault();
 
+      // Create snapshot before first zoom
+      if (!isInteractiveTransform) {
+        createSnapshot();
+      }
+
+      // Clear existing timeout
+      if (wheelTimeoutRef.current) {
+        clearTimeout(wheelTimeoutRef.current);
+      }
+
       // Zoom factor: smaller deltaY = zoom in, larger = zoom out
       const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
       const newZoom = Math.max(0.1, Math.min(100, zoom * zoomFactor));
 
       onZoomChange(newZoom);
+
+      // End transform after 100ms of no wheel events
+      wheelTimeoutRef.current = window.setTimeout(() => {
+        endInteractiveTransform();
+      }, 100);
     }
   };
 
@@ -1043,7 +1164,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setLastDoubleTapTime(now);
 
     if (e.touches.length === 2) {
-      // Two-finger pinch gesture
+      // Two-finger pinch gesture - create snapshot
+      createSnapshot();
       const touch1 = e.touches[0];
       const touch2 = e.touches[1];
       const distance = Math.hypot(
@@ -1067,7 +1189,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         setDraggedIndex(index);
         e.preventDefault();
       } else {
-        // Start panning
+        // Start panning - create snapshot
+        createSnapshot();
         setIsPanning(true);
         setPanStart({ x, y, offsetX, offsetY });
         e.preventDefault();
@@ -1136,6 +1259,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setIsPanning(false);
     setPanStart(null);
     setLastTouchDistance(null);
+    endInteractiveTransform();
   };
 
   return (
