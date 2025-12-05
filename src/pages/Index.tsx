@@ -40,6 +40,9 @@ const Index = () => {
   const [transparency, setTransparency] = useState(0.9);
   const [colorBandWidth, setColorBandWidth] = useState(1.0); // 0.0 = batch size, 1.0 = total roots
   const [blendMode, setBlendMode] = useState<GlobalCompositeOperation>('source-over');
+  const [offsetX, setOffsetX] = useState(0); // Pan offset in complex plane units
+  const [offsetY, setOffsetY] = useState(0); // Pan offset in complex plane units
+  const [zoom, setZoom] = useState(1); // Zoom level (1 = default, 2 = 2x zoomed in)
   const maxIterations = 100; // Fixed value
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
@@ -101,6 +104,12 @@ const Index = () => {
       newCoeffs.length = count;
     }
     setCoefficients(newCoeffs);
+  };
+
+  const handleResetView = () => {
+    setOffsetX(0);
+    setOffsetY(0);
+    setZoom(1);
   };
 
   // Parse URL parameters on component mount
@@ -187,6 +196,32 @@ const Index = () => {
         setBlendMode(indexToBlendMode(parsedBm));
       }
     }
+
+    // Parse pan offset (0x, 0y)
+    const oxParam = params.get('0x');
+    if (oxParam) {
+      const parsedOx = parseFloat(oxParam);
+      if (!isNaN(parsedOx)) {
+        setOffsetX(parsedOx);
+      }
+    }
+
+    const oyParam = params.get('0y');
+    if (oyParam) {
+      const parsedOy = parseFloat(oyParam);
+      if (!isNaN(parsedOy)) {
+        setOffsetY(parsedOy);
+      }
+    }
+
+    // Parse zoom (z)
+    const zParam = params.get('z');
+    if (zParam) {
+      const parsedZ = parseFloat(zParam);
+      if (!isNaN(parsedZ) && parsedZ > 0 && parsedZ <= 100) {
+        setZoom(parsedZ);
+      }
+    }
   }, []); // Empty dependency array - run only once on mount
 
   // Update URL when state changes
@@ -206,11 +241,14 @@ const Index = () => {
     params.set('t', transparency.toFixed(6));
     params.set('cbw', colorBandWidth.toFixed(6));
     params.set('bm', blendModeToIndex(blendMode).toString());
+    params.set('0x', offsetX.toFixed(6));
+    params.set('0y', offsetY.toFixed(6));
+    params.set('z', zoom.toFixed(6));
 
     // Update URL without reloading page or adding to history
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode]); // Update when any param changes
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom]); // Update when any param changes
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-background">
@@ -225,6 +263,12 @@ const Index = () => {
         transparency={transparency}
         colorBandWidth={colorBandWidth}
         blendMode={blendMode}
+        offsetX={offsetX}
+        offsetY={offsetY}
+        zoom={zoom}
+        onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y); }}
+        onZoomChange={setZoom}
+        onResetView={handleResetView}
       />
 
       {/* Overlaid Control Panel */}

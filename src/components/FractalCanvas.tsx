@@ -16,6 +16,12 @@ interface FractalCanvasProps {
   transparency: number;
   colorBandWidth: number;
   blendMode: GlobalCompositeOperation;
+  offsetX: number;
+  offsetY: number;
+  zoom: number;
+  onOffsetChange: (x: number, y: number) => void;
+  onZoomChange: (zoom: number) => void;
+  onResetView: () => void;
   onConvergenceStats?: (stats: ConvergenceStats) => void;
   onExportRequest?: () => void;
 }
@@ -31,7 +37,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -44,17 +50,39 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 1200 });
   const [isMobile, setIsMobile] = useState(false);
 
+  // Pan gesture state
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState<{ x: number; y: number; offsetX: number; offsetY: number } | null>(null);
+
+  // Pinch gesture state
+  const [lastTouchDistance, setLastTouchDistance] = useState<number | null>(null);
+  const [lastDoubleTapTime, setLastDoubleTapTime] = useState(0);
+
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
-  const previousRenderParams = useRef<{ framesToRender: number; degree: number; coefficients: Complex[]; transparency: number; colorBandWidth: number; blendMode: GlobalCompositeOperation; canvasSize: { width: number; height: number } }>({
+  const previousRenderParams = useRef<{
+    framesToRender: number;
+    degree: number;
+    coefficients: Complex[];
+    transparency: number;
+    colorBandWidth: number;
+    blendMode: GlobalCompositeOperation;
+    canvasSize: { width: number; height: number };
+    offsetX: number;
+    offsetY: number;
+    zoom: number;
+  }>({
     framesToRender: 0,
     degree: 0,
     coefficients: [],
     transparency: 0,
     colorBandWidth: 0,
     blendMode: 'source-over',
-    canvasSize: { width: 0, height: 0 }
+    canvasSize: { width: 0, height: 0 },
+    offsetX: 0,
+    offsetY: 0,
+    zoom: 1
   });
   const BATCH_SIZE = 2048; // Process 2048 polynomials per frame
 
@@ -83,9 +111,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       exportCtx.drawImage(offscreenCanvas, 0, 0);
 
       // Draw coefficient dots as double rings (black + white)
-      const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
-      const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
-      const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
+      // Export uses current view (with pan/zoom applied)
+      const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+      const scale = baseScale * zoom;
+      const toCanvasX = (re: number) => canvas.width / 2 + (re - offsetX) * scale;
+      const toCanvasY = (im: number) => canvas.height / 2 - (im - offsetY) * scale;
       const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
 
       coefficients.forEach((coeff) => {
@@ -148,69 +178,80 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     };
   }, []);
 
+  // Keyboard controls for zoom (desktop only)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Only on desktop (not mobile)
+      if (isMobile) return;
+
+      // + or = key (with or without shift) - zoom in 2x
+      if (e.key === '+' || e.key === '=') {
+        e.preventDefault();
+        const newZoom = Math.max(0.1, Math.min(100, zoom * 2));
+        onZoomChange(newZoom);
+      }
+      // - or _ key - zoom out 2x
+      else if (e.key === '-' || e.key === '_') {
+        e.preventDefault();
+        const newZoom = Math.max(0.1, Math.min(100, zoom / 2));
+        onZoomChange(newZoom);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [zoom, onZoomChange, isMobile]);
+
   useEffect(() => {
     setErrorMessage(null);
 
-    // For degree, coefficients, transparency, canvasSize changes: always re-render
+    // Calculate how many frames we would render with current parameters
+    const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
+    const theoreticalTotalRoots = totalPolynomials * degree;
+    const skipRatio = theoreticalTotalRoots > maxRoots ? theoreticalTotalRoots / maxRoots : 1;
+    const skipInterval = Math.ceil(skipRatio);
+    const polynomialsToRender = skipRatio > 1 ? Math.ceil(totalPolynomials / skipInterval) : totalPolynomials;
+    const framesToRender = Math.ceil(polynomialsToRender / BATCH_SIZE);
+
     const prev = previousRenderParams.current;
-    if (
+
+    // Check each parameter independently - any change triggers re-render
+    // Exception: maxRoots only triggers if framesToRender actually changed
+    const shouldRender = (
       prev.degree !== degree ||
-      prev.coefficients !== coefficients ||
+      prev.coefficients.length !== coefficients.length ||
+      prev.coefficients.some((c, i) => c.re !== coefficients[i]?.re || c.im !== coefficients[i]?.im) ||
       prev.transparency !== transparency ||
       prev.colorBandWidth !== colorBandWidth ||
       prev.blendMode !== blendMode ||
       prev.canvasSize.width !== canvasSize.width ||
-      prev.canvasSize.height !== canvasSize.height
-    ) {
-      previousRenderParams.current = {
-        framesToRender: 0, // Will be recalculated
-        degree,
-        coefficients,
-        transparency,
-        colorBandWidth,
-        blendMode,
-        canvasSize: { ...canvasSize }
-      };
-      renderFractal();
-      return;
-    }
+      prev.canvasSize.height !== canvasSize.height ||
+      prev.offsetX !== offsetX ||
+      prev.offsetY !== offsetY ||
+      prev.zoom !== zoom ||
+      prev.framesToRender !== framesToRender
+    );
 
-    // For maxRoots changes: only re-render if framesToRender actually changed
-    const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
-    const theoreticalTotalRoots = totalPolynomials * degree;
-    const skipRatio = theoreticalTotalRoots > maxRoots
-      ? theoreticalTotalRoots / maxRoots
-      : 1;
-    const skipInterval = Math.ceil(skipRatio);
-    const polynomialsToRender = skipRatio > 1
-      ? Math.ceil(totalPolynomials / skipInterval)
-      : totalPolynomials;
-    const framesToRender = Math.ceil(polynomialsToRender / BATCH_SIZE);
-
-    if (prev.framesToRender !== framesToRender) {
+    if (shouldRender) {
+      // Update previous render params
       previousRenderParams.current = {
         framesToRender,
         degree,
-        coefficients,
+        coefficients: [...coefficients],
         transparency,
         colorBandWidth,
         blendMode,
-        canvasSize: { ...canvasSize }
+        canvasSize: { ...canvasSize },
+        offsetX,
+        offsetY,
+        zoom
       };
+
       renderFractal();
-    } else {
-      // Update ref even if not re-rendering
-      previousRenderParams.current = {
-        framesToRender,
-        degree,
-        coefficients,
-        transparency,
-        colorBandWidth,
-        blendMode,
-        canvasSize: { ...canvasSize }
-      };
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom]);
 
 
   // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
@@ -466,10 +507,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     let processedRoots = 0;
     let currentPolynomialIndex = 0; // Track which polynomial we're processing (0-indexed)
 
-    // Equal scale for both axes
-    const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
-    const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
-    const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
+    // Equal scale for both axes with zoom applied
+    const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+    const scale = baseScale * zoom;
+    const toCanvasX = (re: number) => canvas.width / 2 + (re - offsetX) * scale;
+    const toCanvasY = (im: number) => canvas.height / 2 - (im - offsetY) * scale;
 
     // Frame processing function (processes BATCH_SIZE polynomials per frame)
     const processFrame = () => {
@@ -714,10 +756,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const toComplexCoord = (canvasX: number, canvasY: number): Complex => {
     const canvas = canvasRef.current;
     if (!canvas) return { re: 0, im: 0 };
-    
-    const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
-    const re = (canvasX - canvas.width / 2) / scale;
-    const im = -(canvasY - canvas.height / 2) / scale;
+
+    const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+    const scale = baseScale * zoom;
+    const re = (canvasX - canvas.width / 2) / scale + offsetX;
+    const im = -(canvasY - canvas.height / 2) / scale + offsetY;
     return { re, im };
   };
 
@@ -725,12 +768,13 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const canvas = canvasRef.current;
     if (!canvas) return null;
 
-    const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+    const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+    const scale = baseScale * zoom;
     const hitRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.04 : 15;
-    
+
     for (let i = 0; i < coefficients.length; i++) {
-      const x = canvas.width / 2 + coefficients[i].re * scale;
-      const y = canvas.height / 2 - coefficients[i].im * scale;
+      const x = canvas.width / 2 + (coefficients[i].re - offsetX) * scale;
+      const y = canvas.height / 2 - (coefficients[i].im - offsetY) * scale;
       const dist = Math.sqrt((canvasX - x) ** 2 + (canvasY - y) ** 2);
       if (dist < hitRadius) return i;
     }
@@ -747,8 +791,18 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
     const index = getCoeffAtPoint(x, y);
     if (index !== null) {
+      // Dragging a coefficient
       setDraggedIndex(index);
+    } else {
+      // Start panning
+      setIsPanning(true);
+      setPanStart({ x, y, offsetX, offsetY });
     }
+  };
+
+  const handleDoubleClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
+    // Reset view on double-click
+    onResetView();
   };
 
   // Helper function to redraw the coordinate overlay
@@ -761,7 +815,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     if (!ctx) return;
 
     const dpr = window.devicePixelRatio || 1;
-    const scale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+    const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+    const scale = baseScale * zoom;
 
     // Clear and redraw the entire canvas from scratch
     ctx.fillStyle = "#0a0a14";
@@ -773,8 +828,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Draw axes
     ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
     ctx.lineWidth = 2;
-    const toCanvasX = (re: number) => canvas.width / 2 + re * scale;
-    const toCanvasY = (im: number) => canvas.height / 2 - im * scale;
+    const toCanvasX = (re: number) => canvas.width / 2 + (re - offsetX) * scale;
+    const toCanvasY = (im: number) => canvas.height / 2 - (im - offsetY) * scale;
 
     ctx.beginPath();
     ctx.moveTo(toCanvasX(0), 0);
@@ -907,6 +962,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
 
     if (draggedIndex !== null) {
+      // Dragging a coefficient
       const newCoord = toComplexCoord(x, y);
       const newCoeffs = [...coefficients];
       newCoeffs[draggedIndex] = newCoord;
@@ -916,6 +972,19 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       redrawCoordinateOverlay();
 
       onCoefficientsChange(newCoeffs);
+    } else if (isPanning && panStart) {
+      // Panning the view
+      const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+      const scale = baseScale * zoom;
+
+      const dx = (x - panStart.x) / scale;
+      const dy = (y - panStart.y) / scale;
+
+      onOffsetChange(panStart.offsetX - dx, panStart.offsetY + dy);
+
+      // Update mouse position for coordinate display
+      setMousePos({ x, y });
+      redrawCoordinateOverlay();
     } else {
       const hoveredCoeff = getCoeffAtPoint(x, y);
       setHoveredIndex(hoveredCoeff);
@@ -928,12 +997,33 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
   const handleMouseUp = () => {
     setDraggedIndex(null);
+    setIsPanning(false);
+    setPanStart(null);
   };
 
   const handleMouseLeave = () => {
     setDraggedIndex(null);
     setHoveredIndex(null);
     setMousePos(null);
+    setIsPanning(false);
+    setPanStart(null);
+  };
+
+  const handleWheel = (e: React.WheelEvent<HTMLCanvasElement>) => {
+    // Only respond to mouse wheel (not trackpad gestures)
+    // Trackpad typically has deltaMode 0 (pixels) and smaller deltaY values
+    // Mouse wheel has larger discrete deltaY values
+    const isMouseWheel = Math.abs(e.deltaY) > 10;
+
+    if (isMouseWheel) {
+      e.preventDefault();
+
+      // Zoom factor: smaller deltaY = zoom in, larger = zoom out
+      const zoomFactor = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = Math.max(0.1, Math.min(100, zoom * zoomFactor));
+
+      onZoomChange(newZoom);
+    }
   };
 
   // Touch event handlers
@@ -941,41 +1031,111 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    const x = ((touch.clientX - rect.left) / rect.width) * canvas.width;
-    const y = ((touch.clientY - rect.top) / rect.height) * canvas.height;
+    // Check for double-tap
+    const now = Date.now();
+    if (e.touches.length === 1 && now - lastDoubleTapTime < 300) {
+      // Double-tap detected
+      onResetView();
+      setLastDoubleTapTime(0);
+      e.preventDefault();
+      return;
+    }
+    setLastDoubleTapTime(now);
 
-    const index = getCoeffAtPoint(x, y);
-    if (index !== null) {
-      setDraggedIndex(index);
-      e.preventDefault(); // Prevent scrolling
+    if (e.touches.length === 2) {
+      // Two-finger pinch gesture
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
+      setLastTouchDistance(distance);
+      e.preventDefault();
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const x = ((touch.clientX - rect.left) / rect.width) * canvas.width;
+      const y = ((touch.clientY - rect.top) / rect.height) * canvas.height;
+
+      const index = getCoeffAtPoint(x, y);
+      if (index !== null) {
+        // Dragging a coefficient
+        setDraggedIndex(index);
+        e.preventDefault();
+      } else {
+        // Start panning
+        setIsPanning(true);
+        setPanStart({ x, y, offsetX, offsetY });
+        e.preventDefault();
+      }
     }
   };
 
   const handleTouchMove = (e: React.TouchEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
-    if (!canvas || draggedIndex === null) return;
+    if (!canvas) return;
 
-    const touch = e.touches[0];
-    const rect = canvas.getBoundingClientRect();
-    const x = ((touch.clientX - rect.left) / rect.width) * canvas.width;
-    const y = ((touch.clientY - rect.top) / rect.height) * canvas.height;
+    if (e.touches.length === 2 && lastTouchDistance !== null) {
+      // Two-finger pinch gesture
+      const touch1 = e.touches[0];
+      const touch2 = e.touches[1];
+      const distance = Math.hypot(
+        touch2.clientX - touch1.clientX,
+        touch2.clientY - touch1.clientY
+      );
 
-    // Update mouse position for coordinate display
-    setMousePos({ x, y });
-    redrawCoordinateOverlay();
+      const zoomFactor = distance / lastTouchDistance;
+      const newZoom = Math.max(0.1, Math.min(100, zoom * zoomFactor));
 
-    const newCoord = toComplexCoord(x, y);
-    const newCoeffs = [...coefficients];
-    newCoeffs[draggedIndex] = newCoord;
-    onCoefficientsChange(newCoeffs);
-    e.preventDefault(); // Prevent scrolling
+      onZoomChange(newZoom);
+      setLastTouchDistance(distance);
+      e.preventDefault();
+      return;
+    }
+
+    if (e.touches.length === 1) {
+      const touch = e.touches[0];
+      const rect = canvas.getBoundingClientRect();
+      const x = ((touch.clientX - rect.left) / rect.width) * canvas.width;
+      const y = ((touch.clientY - rect.top) / rect.height) * canvas.height;
+
+      if (draggedIndex !== null) {
+        // Dragging a coefficient
+        setMousePos({ x, y });
+        redrawCoordinateOverlay();
+
+        const newCoord = toComplexCoord(x, y);
+        const newCoeffs = [...coefficients];
+        newCoeffs[draggedIndex] = newCoord;
+        onCoefficientsChange(newCoeffs);
+        e.preventDefault();
+      } else if (isPanning && panStart) {
+        // Panning the view
+        const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+        const scale = baseScale * zoom;
+
+        const dx = (x - panStart.x) / scale;
+        const dy = (y - panStart.y) / scale;
+
+        onOffsetChange(panStart.offsetX - dx, panStart.offsetY + dy);
+
+        setMousePos({ x, y });
+        redrawCoordinateOverlay();
+        e.preventDefault();
+      }
+    }
   };
 
   const handleTouchEnd = () => {
     setDraggedIndex(null);
     setMousePos(null);
+    setIsPanning(false);
+    setPanStart(null);
+    setLastTouchDistance(null);
   };
 
   return (
@@ -990,6 +1150,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         onMouseMove={handleMouseMove}
         onMouseUp={handleMouseUp}
         onMouseLeave={handleMouseLeave}
+        onDoubleClick={handleDoubleClick}
+        onWheel={handleWheel}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
