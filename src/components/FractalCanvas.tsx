@@ -475,8 +475,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Calculate theoretical total roots for consistent hue calculation
     const theoreticalTotalRoots = totalPolynomials * degree;
 
-    // Adaptive max iterations based on polynomial degree
-    const adaptiveMaxIterations = Math.min(100, Math.max(20, degree * 10));
+    // Adaptive max iterations based on polynomial degree (2x increase for better convergence)
+    const adaptiveMaxIterations = Math.min(200, Math.max(40, degree * 20));
 
     // Calculate polynomial skip interval to limit total rendered roots
     //
