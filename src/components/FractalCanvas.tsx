@@ -196,7 +196,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         if (!isInteractiveTransform) {
           createSnapshot();
         }
-        const newZoom = zoom * 2;
+        const newZoom = zoom * (2 ** 0.25);
         onZoomChange(newZoom);
       }
       // - or _ key - zoom out 2x
@@ -205,7 +205,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         if (!isInteractiveTransform) {
           createSnapshot();
         }
-        const newZoom = zoom / 2;
+        const newZoom = zoom / (2 ** 0.25);
         onZoomChange(newZoom);
       }
     };
