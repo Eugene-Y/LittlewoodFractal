@@ -121,16 +121,17 @@ const Index = () => {
     const degreeParam = params.get('d');
     if (degreeParam) {
       const parsedDegree = parseInt(degreeParam, 10);
-      if (!isNaN(parsedDegree) && parsedDegree >= 2 && parsedDegree <= 10) {
+      if (!isNaN(parsedDegree) && parsedDegree >= 1) {
         setDegree(parsedDegree);
       }
     }
 
+    // TODO no magic constants, limits should be explicitly named
     // Parse coefficient count and coordinates
     const coeffCountParam = params.get('c');
     if (coeffCountParam) {
       const parsedCount = parseInt(coeffCountParam, 10);
-      if (!isNaN(parsedCount) && parsedCount >= 2 && parsedCount <= 10) {
+      if (!isNaN(parsedCount) && parsedCount >= 1) {
         const newCoeffs: Complex[] = [];
 
         // Try to parse coordinates for each coefficient

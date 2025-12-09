@@ -72,7 +72,7 @@ export const ControlPanel = ({
         <Slider
           id="degree-slider"
           min={2}
-          max={10}
+          max={31}
           step={1}
           value={[degree]}
           onValueChange={(value) => onDegreeChange(value[0])}
@@ -86,14 +86,16 @@ export const ControlPanel = ({
         </Label>
         <Slider
           id="coefficient-slider"
-          min={2}
-          max={10}
+          min={1}
+          max={30}
           step={1}
           value={[coefficientCount]}
           onValueChange={(value) => onCoefficientCountChange(value[0])}
           className="w-full"
         />
       </div>
+      
+      // TODO max iterations
 
       <div className="space-y-2">
         <Label htmlFor="maxroots-slider" className="text-sm font-normal text-foreground">
@@ -102,10 +104,10 @@ export const ControlPanel = ({
         <Slider
           id="maxroots-slider"
           min={30}
-          max={100}
+          max={120}
           step={0.1}
           value={[Math.log10(maxRoots) * 10]}
-          onValueChange={(value) => {
+          onValueChange={(value) => { // TODO wtf simplify this
             // Logarithmic scale: 10^3 (1k) to 10^9.7 (5B)
             const logValue = value[0] / 10;
             const rawValue = Math.pow(10, logValue);

@@ -90,7 +90,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     offsetY: 0,
     zoom: 1
   });
-  const BATCH_SIZE = 2048; // Process 2048 polynomials per frame
+  const BATCH_SIZE = 128; // TODO inverse to the polynomial degree
 
   // Fixed viewport for consistent scaling
   const VIEWPORT_SIZE = 6; // Shows from -3 to 3 on both axes
@@ -954,7 +954,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.font = `${14 * dpr}px monospace`;
       ctx.textAlign = "right";
       ctx.textBaseline = "bottom";
-      ctx.fillText(`Frame ${displayFrame} - ${displayProgress.toFixed(3)}%`, canvas.width - padding, canvas.height - padding);
+      ctx.fillText(`#${displayFrame} - ${displayProgress.toFixed(5)}%`, canvas.width - padding, canvas.height - padding);
     }
   };
 
