@@ -95,7 +95,6 @@ export const ControlPanel = ({
         />
       </div>
       
-      // TODO max iterations
 
       <div className="space-y-2">
         <Label htmlFor="maxroots-slider" className="text-sm font-normal text-foreground">
