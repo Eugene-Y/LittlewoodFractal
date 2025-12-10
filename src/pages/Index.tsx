@@ -224,6 +224,11 @@ const Index = () => {
         setZoom(parsedZ);
       }
     }
+
+    // Show navigation hint on page load
+    toast('use +/- and dragging for navigation, double-click to reset view', {
+      duration: 2000,
+    });
   }, []); // Empty dependency array - run only once on mount
 
   // Update URL when state changes
