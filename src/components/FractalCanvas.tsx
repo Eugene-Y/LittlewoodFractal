@@ -19,6 +19,7 @@ interface FractalCanvasProps {
   offsetX: number;
   offsetY: number;
   zoom: number;
+  polynomialNeighborRange: number;
   onOffsetChange: (x: number, y: number) => void;
   onZoomChange: (zoom: number) => void;
   onResetView: () => void;
@@ -37,8 +38,9 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const [isRendering, setIsRendering] = useState(false);
@@ -49,6 +51,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const [mousePos, setMousePos] = useState<{ x: number; y: number } | null>(null);
   const [canvasSize, setCanvasSize] = useState({ width: 1200, height: 1200 });
   const [isMobile, setIsMobile] = useState(false);
+  const [hoveredPolynomialIndex, setHoveredPolynomialIndex] = useState<number | null>(null);
 
   // Pan gesture state
   const [isPanning, setIsPanning] = useState(false);
@@ -67,6 +70,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   const [renderProgress, setRenderProgress] = useState(0);
   const [currentRenderFrame, setCurrentRenderFrame] = useState(0);
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
+
+  // Overlay rendering state (async)
+  const overlayRenderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
+  const [overlayRenderProgress, setOverlayRenderProgress] = useState(0);
   const previousRenderParams = useRef<{
     framesToRender: number;
     degree: number;
@@ -224,6 +231,23 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       window.removeEventListener('keyup', handleKeyUp);
     };
   }, [zoom, onZoomChange, isMobile, isInteractiveTransform]);
+
+  // Handle polynomial overlay rendering when hoveredPolynomialIndex changes
+  useEffect(() => {
+    if (hoveredPolynomialIndex !== null) {
+      startOverlayRendering(hoveredPolynomialIndex);
+    } else {
+      stopOverlayRendering();
+    }
+
+    // Cleanup on unmount or when index changes
+    return () => {
+      if (overlayRenderingRef.current.animationId) {
+        cancelAnimationFrame(overlayRenderingRef.current.animationId);
+      }
+    };
+  }, [hoveredPolynomialIndex, degree, coefficients, polynomialNeighborRange, zoom, offsetX, offsetY]);
+
 
   useEffect(() => {
     setErrorMessage(null);
@@ -747,6 +771,110 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     redrawCoordinateOverlay();
   };
 
+
+  // Start async overlay rendering when hoveredPolynomialIndex changes
+  const startOverlayRendering = (polynomialIndex: number) => {
+    // Cancel any previous overlay rendering
+    overlayRenderingRef.current.id++;
+    if (overlayRenderingRef.current.animationId) {
+      cancelAnimationFrame(overlayRenderingRef.current.animationId);
+    }
+
+    const currentRenderId = overlayRenderingRef.current.id;
+
+    const overlayCanvas = overlayCanvasRef.current;
+    const canvas = canvasRef.current;
+    if (!overlayCanvas || !canvas) return;
+
+    const overlayCtx = overlayCanvas.getContext('2d');
+    if (!overlayCtx) return;
+
+    const dpr = window.devicePixelRatio || 1;
+    const isLandscape = canvas.width > canvas.height;
+
+    if (!isLandscape) {
+      // Clear and return for portrait mode
+      overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+      return;
+    }
+
+    const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
+    const scale = baseScale * zoom;
+    const toCanvasX = (re: number) => canvas.width / 2 + (re - offsetX) * scale;
+    const toCanvasY = (im: number) => canvas.height / 2 - (im - offsetY) * scale;
+
+    // Calculate polynomial range to render
+    const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
+    const startIndex = Math.max(0, polynomialIndex - polynomialNeighborRange);
+    const endIndex = Math.min(totalPolynomials - 1, polynomialIndex + polynomialNeighborRange);
+    const totalToRender = endIndex - startIndex + 1;
+
+    const adaptiveMaxIterations = Math.min(200, Math.max(40, degree * 20));
+    const OVERLAY_BATCH_SIZE = 8; // Process 8 polynomials per frame
+
+    let currentPolyIdx = startIndex;
+
+    // Clear and draw initial overlay
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+    overlayCtx.fillStyle = "rgba(0, 0, 0, 0.7)";
+    overlayCtx.fillRect(0, 0, canvas.width, canvas.height);
+
+    const processOverlayFrame = () => {
+      // Check if cancelled
+      if (overlayRenderingRef.current.id !== currentRenderId) return;
+
+      // Process batch
+      let processedInThisFrame = 0;
+      while (processedInThisFrame < OVERLAY_BATCH_SIZE && currentPolyIdx <= endIndex) {
+        const poly = generatePolynomialByIndex(currentPolyIdx, degree, coefficients);
+        const result = findRootsDurandKerner(poly, adaptiveMaxIterations);
+
+        if (result.converged) {
+          result.roots.forEach((root) => {
+            const x = toCanvasX(root.re);
+            const y = toCanvasY(root.im);
+
+            // Draw white opaque dots
+            overlayCtx.fillStyle = "rgba(255, 255, 255, 1.0)";
+            overlayCtx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 3, 3);
+          });
+        }
+
+        currentPolyIdx++;
+        processedInThisFrame++;
+      }
+
+      // Update progress
+      const progress = ((currentPolyIdx - startIndex) / totalToRender) * 100;
+      setOverlayRenderProgress(progress);
+
+      // Continue or finish
+      if (currentPolyIdx <= endIndex) {
+        overlayRenderingRef.current.animationId = requestAnimationFrame(processOverlayFrame);
+      }
+    };
+
+    // Start processing
+    overlayRenderingRef.current.animationId = requestAnimationFrame(processOverlayFrame);
+  };
+
+  // Stop overlay rendering and clear
+  const stopOverlayRendering = () => {
+    overlayRenderingRef.current.id++;
+    if (overlayRenderingRef.current.animationId) {
+      cancelAnimationFrame(overlayRenderingRef.current.animationId);
+    }
+    setOverlayRenderProgress(0);
+
+    const overlayCanvas = overlayCanvasRef.current;
+    if (!overlayCanvas) return;
+
+    const overlayCtx = overlayCanvas.getContext('2d');
+    if (!overlayCtx) return;
+
+    overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+  };
+
   // Helper function to redraw the coordinate overlay
   const redrawCoordinateOverlay = (currentProgress?: number, currentFrame?: number, currentIsRendering?: boolean) => {
     const canvas = canvasRef.current;
@@ -941,8 +1069,23 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.fillText(coordText, textX, textY);
     }
 
+    // Draw polynomial strip border (thin vertical line) - only for landscape
+    const isLandscape = canvas.width > canvas.height;
+    const STRIP_WIDTH_CM = 2;
+    const stripWidth = STRIP_WIDTH_CM * dpr * 37.8; // ~2cm in pixels (96 DPI)
+
+    if (isLandscape) {
+      const stripX = canvas.width - stripWidth;
+
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(stripX, 0);
+      ctx.lineTo(stripX, canvas.height);
+      ctx.stroke();
+    }
+
     // Draw progress indicator in bottom-right corner
-    // Use passed parameters if available (during rendering), otherwise use state
     const displayProgress = currentProgress !== undefined ? currentProgress : renderProgress;
     const displayFrame = currentFrame !== undefined ? currentFrame : currentRenderFrame;
     const displayIsRendering = currentIsRendering !== undefined ? currentIsRendering : isRendering;
@@ -965,6 +1108,37 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const rect = canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
     const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
+
+    // Check if hovering over polynomial strip
+    const dpr = window.devicePixelRatio || 1;
+    const isLandscape = canvas.width > canvas.height;
+    const STRIP_WIDTH_CM = 2;
+    const stripWidth = STRIP_WIDTH_CM * dpr * 37.8;
+    const stripX = canvas.width - stripWidth;
+
+    if (isLandscape && x >= stripX && !draggedIndex && !isPanning) {
+      // Hovering over polynomial strip - calculate which polynomial
+      const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
+
+      // Map Y position to polynomial index
+      // We want: top (y=0) -> index 0, bottom (y=height-1) -> index totalPolynomials-1
+      // Use Math.min to clamp the result to valid range
+      const polynomialIndex = Math.min(
+        totalPolynomials - 1,
+        Math.floor((y / canvas.height) * totalPolynomials)
+      );
+
+      if (polynomialIndex !== hoveredPolynomialIndex) {
+        setHoveredPolynomialIndex(polynomialIndex);
+      }
+      setMousePos({ x, y });
+      return;
+    }
+
+    // Not hovering over strip - clear polynomial hover if set
+    if (hoveredPolynomialIndex !== null) {
+      setHoveredPolynomialIndex(null);
+    }
 
     if (draggedIndex !== null) {
       // Dragging a coefficient
@@ -1013,6 +1187,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setMousePos(null);
     setIsPanning(false);
     setPanStart(null);
+    setHoveredPolynomialIndex(null);
     endInteractiveTransform();
   };
 
@@ -1171,7 +1346,14 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         ref={canvasRef}
         width={canvasSize.width}
         height={canvasSize.height}
-        className="w-full h-full cursor-pointer touch-none"
+        className="absolute inset-0 w-full h-full"
+        style={{ imageRendering: 'crisp-edges' }}
+      />
+      <canvas
+        ref={overlayCanvasRef}
+        width={canvasSize.width}
+        height={canvasSize.height}
+        className="absolute inset-0 w-full h-full cursor-pointer touch-none pointer-events-auto"
         style={{ imageRendering: 'crisp-edges' }}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}

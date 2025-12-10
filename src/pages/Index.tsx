@@ -43,6 +43,8 @@ const Index = () => {
   const [offsetX, setOffsetX] = useState(0); // Pan offset in complex plane units
   const [offsetY, setOffsetY] = useState(0); // Pan offset in complex plane units
   const [zoom, setZoom] = useState(1); // Zoom level (1 = default, 2 = 2x zoomed in)
+  const [polynomialNeighborRange, setPolynomialNeighborRange] = useState(5); // ±N polynomials around hovered one
+  const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
   const maxIterations = 100; // Fixed value
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
@@ -225,6 +227,15 @@ const Index = () => {
       }
     }
 
+    // Parse hover overlay range (hor)
+    const horParam = params.get('hor');
+    if (horParam) {
+      const parsedHor = parseInt(horParam, 10);
+      if (!isNaN(parsedHor) && parsedHor >= 0) {
+        setPolynomialNeighborRange(parsedHor);
+      }
+    }
+
     // Show navigation hint on page load
     toast('use +/- and dragging for navigation, double-click to reset view', {
       duration: 2000,
@@ -251,11 +262,21 @@ const Index = () => {
     params.set('0x', offsetX.toFixed(6));
     params.set('0y', offsetY.toFixed(6));
     params.set('z', zoom.toFixed(6));
+    params.set('hor', polynomialNeighborRange.toString());
 
     // Update URL without reloading page or adding to history
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom]); // Update when any param changes
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange]); // Update when any param changes
+
+  // Track landscape/portrait mode
+  useEffect(() => {
+    const handleResize = () => {
+      setIsLandscape(window.innerWidth > window.innerHeight);
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   return (
     <div className="relative w-full h-screen overflow-hidden bg-background">
@@ -273,6 +294,7 @@ const Index = () => {
         offsetX={offsetX}
         offsetY={offsetY}
         zoom={zoom}
+        polynomialNeighborRange={polynomialNeighborRange}
         onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y); }}
         onZoomChange={setZoom}
         onResetView={handleResetView}
@@ -287,6 +309,9 @@ const Index = () => {
           onCoefficientCountChange={handleCoefficientCountChange}
           maxRoots={maxRoots}
           onMaxRootsChange={setMaxRoots}
+          polynomialNeighborRange={polynomialNeighborRange}
+          onPolynomialNeighborRangeChange={setPolynomialNeighborRange}
+          isLandscape={isLandscape}
           transparency={transparency}
           onTransparencyChange={setTransparency}
           colorBandWidth={colorBandWidth}

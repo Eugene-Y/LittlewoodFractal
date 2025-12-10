@@ -12,6 +12,9 @@ interface ControlPanelProps {
   onCoefficientCountChange: (value: number) => void;
   maxRoots: number;
   onMaxRootsChange: (value: number) => void;
+  polynomialNeighborRange: number;
+  onPolynomialNeighborRangeChange: (value: number) => void;
+  isLandscape: boolean;
   transparency: number;
   onTransparencyChange: (value: number) => void;
   colorBandWidth: number;
@@ -29,6 +32,9 @@ export const ControlPanel = ({
   onCoefficientCountChange,
   maxRoots,
   onMaxRootsChange,
+  polynomialNeighborRange,
+  onPolynomialNeighborRangeChange,
+  isLandscape,
   transparency,
   onTransparencyChange,
   colorBandWidth,
@@ -122,6 +128,23 @@ export const ControlPanel = ({
           className="w-full"
         />
       </div>
+
+      {isLandscape && (
+        <div className="space-y-2">
+          <Label htmlFor="neighbor-range-slider" className="text-sm font-normal text-foreground">
+            Hover Overlay Range: ±{polynomialNeighborRange}
+          </Label>
+          <Slider
+            id="neighbor-range-slider"
+            min={0}
+            max={50}
+            step={1}
+            value={[polynomialNeighborRange]}
+            onValueChange={(value) => onPolynomialNeighborRangeChange(value[0])}
+            className="w-full"
+          />
+        </div>
+      )}
       </TabsContent>
 
       <TabsContent value="style" className="space-y-4 mt-4">
