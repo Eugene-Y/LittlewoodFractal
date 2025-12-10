@@ -137,7 +137,7 @@ export const ControlPanel = ({
           <Slider
             id="neighbor-range-slider"
             min={0}
-            max={50}
+            max={100}
             step={1}
             value={[polynomialNeighborRange]}
             onValueChange={(value) => onPolynomialNeighborRangeChange(value[0])}
