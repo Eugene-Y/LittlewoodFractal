@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
-
-interface Complex {
-  re: number;
-  im: number;
-}
+import {
+  Complex,
+  generatePolynomialByIndex,
+  getTotalPolynomials,
+  findRootsDurandKerner,
+} from "@/lib/math";
 
 interface FractalCanvasProps {
   degree: number;
@@ -300,164 +301,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       renderFractal();
     }
   }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom]);
-
-
-  // Generate a single polynomial by index (on-the-fly, no memory allocation for all polynomials)
-  const generatePolynomialByIndex = (index: number, degree: number, coeffs: Complex[]): Complex[] => {
-    const poly: Complex[] = [];
-    let temp = index;
-    for (let j = 0; j <= degree; j++) {
-      poly.push(coeffs[temp % coeffs.length]);
-      temp = Math.floor(temp / coeffs.length);
-    }
-    return poly;
-  };
-
-  // Calculate total number of polynomials without generating them
-  const getTotalPolynomials = (degree: number, coeffsLength: number): number => {
-    return Math.pow(coeffsLength, degree + 1);
-  };
-
-  const evaluatePolynomial = (coeffs: Complex[], z: Complex): Complex => {
-    let result = { re: 0, im: 0 };
-    let power = { re: 1, im: 0 };
-
-    for (let i = 0; i < coeffs.length; i++) {
-      // result += coeffs[i] * power
-      const term = complexMultiply(coeffs[i], power);
-      result = complexAdd(result, term);
-
-      // power *= z
-      power = complexMultiply(power, z);
-    }
-
-    return result;
-  };
-
-  const complexAdd = (a: Complex, b: Complex): Complex => ({
-    re: a.re + b.re,
-    im: a.im + b.im,
-  });
-
-  const complexSubtract = (a: Complex, b: Complex): Complex => ({
-    re: a.re - b.re,
-    im: a.im - b.im,
-  });
-
-  const complexMultiply = (a: Complex, b: Complex): Complex => ({
-    re: a.re * b.re - a.im * b.im,
-    im: a.re * b.im + a.im * b.re,
-  });
-
-  const complexDivide = (a: Complex, b: Complex): Complex => {
-    const denom = b.re * b.re + b.im * b.im;
-    return {
-      re: (a.re * b.re + a.im * b.im) / denom,
-      im: (a.im * b.re - a.re * b.im) / denom,
-    };
-  };
-
-  const complexAbs = (z: Complex): number => Math.sqrt(z.re * z.re + z.im * z.im);
-
-  const evaluateDerivative = (coeffs: Complex[], z: Complex): Complex => {
-    let result = { re: 0, im: 0 };
-    let power = { re: 1, im: 0 };
-
-    for (let i = 1; i < coeffs.length; i++) {
-      const coeff = complexMultiply(coeffs[i], { re: i, im: 0 });
-      const term = complexMultiply(coeff, power);
-      result = complexAdd(result, term);
-      power = complexMultiply(power, z);
-    }
-
-    return result;
-  };
-
-  const findRootsDurandKerner = (coeffs: Complex[], maxIter: number): { roots: Complex[], converged: boolean, iterations: number } => {
-    const degree = coeffs.length - 1;
-    if (degree <= 0) return { roots: [], converged: true, iterations: 0 };
-
-    // Make monic: divide all coefficients by leading coefficient
-    const leading = coeffs[degree];
-    const leadingAbs = complexAbs(leading);
-    if (leadingAbs === 0) {
-      return { roots: Array(degree).fill({ re: 0, im: 0 }), converged: true, iterations: 0 };
-    }
-    
-    const monicCoeffs = coeffs.map(c => complexDivide(c, leading));
-
-    // Compute adaptive radius: 1 + max|a_i| for i=0..degree-1
-    let maxCoeffAbs = 0;
-    for (let i = 0; i < degree; i++) {
-      const abs = complexAbs(monicCoeffs[i]);
-      if (abs > maxCoeffAbs) maxCoeffAbs = abs;
-    }
-    const radius = 1.0 + maxCoeffAbs;
-
-    // Initialize roots on a circle with adaptive radius
-    const roots: Complex[] = [];
-    for (let i = 0; i < degree; i++) {
-      const angle = (2 * Math.PI * i) / degree;
-      roots.push({
-        re: radius * Math.cos(angle),
-        im: radius * Math.sin(angle),
-      });
-    }
-
-    // Durand-Kerner iterations
-    let finalIter = 0;
-    let converged = false;
-    const tolerance = 1e-6;
-    
-    for (let iter = 0; iter < maxIter; iter++) {
-      let maxChange = 0;
-
-      for (let i = 0; i < degree; i++) {
-        const xi = roots[i];
-        
-        // Evaluate polynomial using Horner's method
-        let p = monicCoeffs[degree];
-        for (let k = degree - 1; k >= 0; k--) {
-          p = complexAdd(complexMultiply(p, xi), monicCoeffs[k]);
-        }
-
-        // Compute denominator: product of (xi - xj) for all j != i
-        let denom: Complex = { re: 1, im: 0 };
-        for (let j = 0; j < degree; j++) {
-          if (j === i) continue;
-          let diff = complexSubtract(xi, roots[j]);
-          
-          // Perturb slightly if roots are too close
-          if (complexAbs(diff) < 1e-10) {
-            diff = complexAdd(diff, { re: 1e-6, im: 1e-6 });
-          }
-          denom = complexMultiply(denom, diff);
-        }
-
-        // Skip if denominator is zero
-        if (complexAbs(denom) < 1e-15) {
-          continue;
-        }
-
-        const correction = complexDivide(p, denom);
-        const newXi = complexSubtract(xi, correction);
-        const change = complexAbs(complexSubtract(newXi, xi));
-        
-        if (change > maxChange) maxChange = change;
-        roots[i] = newXi;
-      }
-
-      finalIter = iter + 1;
-
-      // Check for convergence
-      if (maxChange < tolerance) {
-        converged = true;
-        break;
-      }
-    }
-
-    return { roots, converged, iterations: finalIter };
-  };
 
   const renderFractal = async () => {
     const canvas = canvasRef.current;
