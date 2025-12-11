@@ -283,7 +283,7 @@ export const ControlPanel = ({
               id="scale-slider"
               min={-100}
               max={100}
-              step={1}
+              step={0.25}
               value={[scaleSlider]}
               onPointerDown={() => onTransformStart()}
               onValueChange={(value) => {
@@ -313,7 +313,7 @@ export const ControlPanel = ({
               id="rotate-slider"
               min={-100}
               max={100}
-              step={1}
+              step={0.25}
               value={[rotateSlider]}
               onPointerDown={() => onTransformStart()}
               onValueChange={(value) => {
@@ -343,7 +343,7 @@ export const ControlPanel = ({
               id="hoffset-slider"
               min={-100}
               max={100}
-              step={1}
+              step={0.25}
               value={[hOffsetSlider]}
               onPointerDown={() => onTransformStart()}
               onValueChange={(value) => {
@@ -374,7 +374,7 @@ export const ControlPanel = ({
               id="voffset-slider"
               min={-100}
               max={100}
-              step={1}
+              step={0.25}
               value={[vOffsetSlider]}
               onPointerDown={() => onTransformStart()}
               onValueChange={(value) => {
@@ -405,7 +405,7 @@ export const ControlPanel = ({
               id="randomize-slider"
               min={0}
               max={100}
-              step={1}
+              step={0.25}
               value={[randomizeSlider]}
               onPointerDown={() => onTransformStart()}
               onValueChange={(value) => {
