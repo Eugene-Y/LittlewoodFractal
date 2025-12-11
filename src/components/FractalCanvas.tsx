@@ -102,7 +102,26 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     offsetY: 0,
     zoom: 1
   });
-  const BATCH_SIZE = 128; // TODO inverse to the polynomial degree
+  // Dynamic batch size based on polynomial complexity
+  // Root finding is O(degree²) - degree has quadratic impact on cost
+  // Polynomial generation is O(coeffCount) - linear impact
+  // Higher complexity → smaller batch size (more expensive per polynomial)
+  const getBatchSize = (deg: number, coeffCount: number): number => {
+    // Complexity: degree² × coeffCount
+    // Calibrated so deg=31 with few coefficients still gives ~128 batch
+    // deg=31, coeffs=2  → 961×2  = 1922  → batch 128
+    // deg=31, coeffs=30 → 961×30 = 28830 → batch 128
+    // deg=2,  coeffs=30 → 4×30   = 120   → batch 2048
+    // deg=2,  coeffs=1  → 4×1    = 4     → batch 16384
+    const complexity = (deg * deg) * Math.max(coeffCount, 1);
+    // Calibrated: complexity ~1900 (deg=31, coeffs=2) gives batch 128
+    const baseBatch = Math.round((128 * 1900) / complexity);
+    // Round to nearest power of 2
+    const power = Math.round(Math.log2(baseBatch));
+    const clamped = Math.max(7, Math.min(14, power)); // 128 to 16384
+    return Math.pow(2, clamped);
+  };
+  const BATCH_SIZE = getBatchSize(degree, coefficients.length);
 
   // Fixed viewport for consistent scaling
   const VIEWPORT_SIZE = 6; // Shows from -3 to 3 on both axes
