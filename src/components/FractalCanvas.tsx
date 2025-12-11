@@ -6,6 +6,7 @@ import {
   getTotalPolynomials,
   findRootsDurandKerner,
 } from "@/lib/math";
+import { GridConfig, snapToGrid } from "@/lib/grid";
 
 interface FractalCanvasProps {
   degree: number;
@@ -21,6 +22,7 @@ interface FractalCanvasProps {
   offsetY: number;
   zoom: number;
   polynomialNeighborRange: number;
+  gridConfig: GridConfig;
   onOffsetChange: (x: number, y: number) => void;
   onZoomChange: (zoom: number) => void;
   onResetView: () => void;
@@ -39,7 +41,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -249,6 +251,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     };
   }, [hoveredPolynomialIndex, degree, coefficients, polynomialNeighborRange, zoom, offsetX, offsetY]);
 
+  // Redraw overlay when grid config changes
+  useEffect(() => {
+    redrawCoordinateOverlay();
+  }, [gridConfig]);
 
   useEffect(() => {
     setErrorMessage(null);
@@ -775,11 +781,100 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.drawImage(offscreenCanvas, 0, 0);
     }
 
-    // Draw axes
-    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
-    ctx.lineWidth = 2;
+    // Helper functions for coordinate transformation
     const toCanvasX = (re: number) => canvas.width / 2 + (re - offsetX) * scale;
     const toCanvasY = (im: number) => canvas.height / 2 - (im - offsetY) * scale;
+
+    // Calculate visible range
+    const viewportWidth = VIEWPORT_SIZE / zoom;
+    const viewportHeight = VIEWPORT_SIZE / zoom;
+    const minRe = offsetX - viewportWidth / 2;
+    const maxRe = offsetX + viewportWidth / 2;
+    const minIm = offsetY - viewportHeight / 2;
+    const maxIm = offsetY + viewportHeight / 2;
+
+    // Draw grid lines (before axes so axes appear on top)
+    ctx.lineWidth = 1;
+
+    // Rectangular grid
+    if (gridConfig.rectangular.enabled && gridConfig.rectangular.step > 0) {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+      ctx.beginPath();
+      const step = gridConfig.rectangular.step;
+
+      // Vertical lines
+      const startX = Math.floor(minRe / step) * step;
+      for (let re = startX; re <= maxRe; re += step) {
+        if (Math.abs(re) < step * 0.01) continue; // Skip origin (will be drawn as axis)
+        const x = toCanvasX(re);
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+      }
+
+      // Horizontal lines
+      const startY = Math.floor(minIm / step) * step;
+      for (let im = startY; im <= maxIm; im += step) {
+        if (Math.abs(im) < step * 0.01) continue; // Skip origin
+        const y = toCanvasY(im);
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+      }
+      ctx.stroke();
+    }
+
+    // Concentric circles
+    if (gridConfig.circles.enabled && gridConfig.circles.step > 0) {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+      ctx.beginPath();
+      const step = gridConfig.circles.step;
+      // Calculate max radius as distance from origin (0,0) to the farthest viewport corner
+      const cornerDistances = [
+        Math.sqrt(minRe * minRe + minIm * minIm), // bottom-left
+        Math.sqrt(maxRe * maxRe + minIm * minIm), // bottom-right
+        Math.sqrt(minRe * minRe + maxIm * maxIm), // top-left
+        Math.sqrt(maxRe * maxRe + maxIm * maxIm), // top-right
+      ];
+      const maxRadius = Math.max(...cornerDistances) + step;
+
+      for (let r = step; r <= maxRadius; r += step) {
+        const centerX = toCanvasX(0);
+        const centerY = toCanvasY(0);
+        const radiusPixels = r * scale;
+        ctx.moveTo(centerX + radiusPixels, centerY);
+        ctx.arc(centerX, centerY, radiusPixels, 0, 2 * Math.PI);
+      }
+      ctx.stroke();
+    }
+
+    // Rays from origin
+    if (gridConfig.rays.enabled && gridConfig.rays.count > 0) {
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+      ctx.beginPath();
+      const count = gridConfig.rays.count;
+      // Calculate max radius as distance from origin to farthest viewport corner
+      const cornerDistances = [
+        Math.sqrt(minRe * minRe + minIm * minIm),
+        Math.sqrt(maxRe * maxRe + minIm * minIm),
+        Math.sqrt(minRe * minRe + maxIm * maxIm),
+        Math.sqrt(maxRe * maxRe + maxIm * maxIm),
+      ];
+      const maxRadius = Math.max(...cornerDistances) * 1.2;
+      const centerX = toCanvasX(0);
+      const centerY = toCanvasY(0);
+
+      for (let i = 0; i < count; i++) {
+        const angle = (2 * Math.PI * i) / count;
+        const endX = toCanvasX(maxRadius * Math.cos(angle));
+        const endY = toCanvasY(maxRadius * Math.sin(angle));
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(endX, endY);
+      }
+      ctx.stroke();
+    }
+
+    // Draw axes (on top of grid)
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";
+    ctx.lineWidth = 2;
 
     ctx.beginPath();
     ctx.moveTo(toCanvasX(0), 0);
@@ -791,10 +886,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Draw tickmarks and labels
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
     ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-
-    // Dynamic tick spacing and range based on zoom level
-    const viewportWidth = VIEWPORT_SIZE / zoom;
-    const viewportHeight = VIEWPORT_SIZE / zoom;
 
     // Calculate appropriate tick spacing - aim for ~5 ticks per axis
     // Use only powers of 10 (1, 10, 100, 1000...) or fractions (0.1, 0.01, 0.001...)
@@ -985,7 +1076,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
     if (draggedIndex !== null) {
       // Dragging a coefficient
-      const newCoord = toComplexCoord(x, y);
+      const rawCoord = toComplexCoord(x, y);
+      const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig);
+      const newCoord = { re: snapped.re, im: snapped.im };
       const newCoeffs = [...coefficients];
       newCoeffs[draggedIndex] = newCoord;
 
@@ -1152,7 +1245,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         setMousePos({ x, y });
         redrawCoordinateOverlay();
 
-        const newCoord = toComplexCoord(x, y);
+        const rawCoord = toComplexCoord(x, y);
+        const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig);
+        const newCoord = { re: snapped.re, im: snapped.im };
         const newCoeffs = [...coefficients];
         newCoeffs[draggedIndex] = newCoord;
         onCoefficientsChange(newCoeffs);

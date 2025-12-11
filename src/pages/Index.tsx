@@ -2,6 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import { FractalCanvas, FractalCanvasRef } from "@/components/FractalCanvas";
 import { ControlPanel } from "@/components/ControlPanel";
 import { toast } from "@/components/ui/sonner";
+import { GridConfig, DEFAULT_GRID_CONFIG } from "@/lib/grid";
 
 interface Complex {
   re: number;
@@ -46,6 +47,7 @@ const Index = () => {
   const [polynomialNeighborRange, setPolynomialNeighborRange] = useState(5); // ±N polynomials around hovered one
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
   const maxIterations = 100; // Fixed value
+  const [gridConfig, setGridConfig] = useState<GridConfig>(DEFAULT_GRID_CONFIG);
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
     { re: -1, im: 0 },
@@ -236,6 +238,74 @@ const Index = () => {
       }
     }
 
+    // Parse grid config
+    const newGridConfig = { ...DEFAULT_GRID_CONFIG };
+    let hasGridParams = false;
+
+    // Rectangular grid
+    const grParam = params.get('gr');
+    if (grParam !== null) {
+      newGridConfig.rectangular.enabled = grParam === '1';
+      hasGridParams = true;
+    }
+    const grsParam = params.get('grs');
+    if (grsParam) {
+      const step = parseFloat(grsParam);
+      if (!isNaN(step) && step > 0) {
+        newGridConfig.rectangular.step = step;
+        hasGridParams = true;
+      }
+    }
+
+    // Circles
+    const gcParam = params.get('gc');
+    if (gcParam !== null) {
+      newGridConfig.circles.enabled = gcParam === '1';
+      hasGridParams = true;
+    }
+    const gcsParam = params.get('gcs');
+    if (gcsParam) {
+      const step = parseFloat(gcsParam);
+      if (!isNaN(step) && step > 0) {
+        newGridConfig.circles.step = step;
+        hasGridParams = true;
+      }
+    }
+
+    // Rays
+    const gryParam = params.get('gry');
+    if (gryParam !== null) {
+      newGridConfig.rays.enabled = gryParam === '1';
+      hasGridParams = true;
+    }
+    const grcParam = params.get('grc');
+    if (grcParam) {
+      const count = parseInt(grcParam, 10);
+      if (!isNaN(count) && count > 0) {
+        newGridConfig.rays.count = count;
+        hasGridParams = true;
+      }
+    }
+
+    // Snap settings
+    const gsParam = params.get('gs');
+    if (gsParam !== null) {
+      newGridConfig.snapEnabled = gsParam === '1';
+      hasGridParams = true;
+    }
+    const gstParam = params.get('gst');
+    if (gstParam) {
+      const threshold = parseFloat(gstParam);
+      if (!isNaN(threshold) && threshold > 0) {
+        newGridConfig.snapThreshold = threshold;
+        hasGridParams = true;
+      }
+    }
+
+    if (hasGridParams) {
+      setGridConfig(newGridConfig);
+    }
+
     // Show navigation hint on page load
     toast('use +/- and dragging for navigation, double-click to reset view', {
       duration: 2000,
@@ -264,10 +334,20 @@ const Index = () => {
     params.set('z', zoom.toFixed(6));
     params.set('hor', polynomialNeighborRange.toString());
 
+    // Grid config
+    params.set('gr', gridConfig.rectangular.enabled ? '1' : '0');
+    params.set('grs', gridConfig.rectangular.step.toString());
+    params.set('gc', gridConfig.circles.enabled ? '1' : '0');
+    params.set('gcs', gridConfig.circles.step.toString());
+    params.set('gry', gridConfig.rays.enabled ? '1' : '0');
+    params.set('grc', gridConfig.rays.count.toString());
+    params.set('gs', gridConfig.snapEnabled ? '1' : '0');
+    params.set('gst', gridConfig.snapThreshold.toString());
+
     // Update URL without reloading page or adding to history
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange]); // Update when any param changes
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig]); // Update when any param changes
 
   // Track landscape/portrait mode
   useEffect(() => {
@@ -295,6 +375,7 @@ const Index = () => {
         offsetY={offsetY}
         zoom={zoom}
         polynomialNeighborRange={polynomialNeighborRange}
+        gridConfig={gridConfig}
         onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y); }}
         onZoomChange={setZoom}
         onResetView={handleResetView}
@@ -318,6 +399,8 @@ const Index = () => {
           onColorBandWidthChange={setColorBandWidth}
           blendMode={blendMode}
           onBlendModeChange={setBlendMode}
+          gridConfig={gridConfig}
+          onGridConfigChange={setGridConfig}
           onExportPNG={handleExportPNG}
           onExportLink={handleExportLink}
         />

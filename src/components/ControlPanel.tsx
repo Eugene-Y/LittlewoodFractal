@@ -3,7 +3,10 @@ import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { Download, Link } from "lucide-react";
+import { GridConfig } from "@/lib/grid";
 
 interface ControlPanelProps {
   degree: number;
@@ -21,6 +24,8 @@ interface ControlPanelProps {
   onColorBandWidthChange: (value: number) => void;
   blendMode: GlobalCompositeOperation;
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
+  gridConfig: GridConfig;
+  onGridConfigChange: (config: GridConfig) => void;
   onExportPNG: () => void;
   onExportLink: () => void;
 }
@@ -41,16 +46,33 @@ export const ControlPanel = ({
   onColorBandWidthChange,
   blendMode,
   onBlendModeChange,
+  gridConfig,
+  onGridConfigChange,
   onExportPNG,
   onExportLink,
 }: ControlPanelProps) => {
+  // Helper to update nested grid config
+  const updateGridConfig = (
+    section: 'rectangular' | 'circles' | 'rays',
+    field: string,
+    value: boolean | number
+  ) => {
+    onGridConfigChange({
+      ...gridConfig,
+      [section]: {
+        ...gridConfig[section],
+        [field]: value,
+      },
+    });
+  };
   return (
     <div className="space-y-3">
       <Tabs defaultValue="polynomial" className="w-full">
         <div className="flex gap-2 items-center">
           <TabsList className="flex-1 bg-background/50 backdrop-blur-sm">
-            <TabsTrigger value="polynomial" className="flex-1">POLYNOMIAL</TabsTrigger>
+            <TabsTrigger value="polynomial" className="flex-1">POLY</TabsTrigger>
             <TabsTrigger value="style" className="flex-1">STYLE</TabsTrigger>
+            <TabsTrigger value="grids" className="flex-1">GRIDS</TabsTrigger>
           </TabsList>
           <Button
             onClick={onExportPNG}
@@ -128,23 +150,6 @@ export const ControlPanel = ({
           className="w-full"
         />
       </div>
-
-      {isLandscape && (
-        <div className="space-y-2">
-          <Label htmlFor="neighbor-range-slider" className="text-sm font-normal text-foreground">
-            Hover Overlay Range: ±{polynomialNeighborRange}
-          </Label>
-          <Slider
-            id="neighbor-range-slider"
-            min={0}
-            max={100}
-            step={1}
-            value={[polynomialNeighborRange]}
-            onValueChange={(value) => onPolynomialNeighborRangeChange(value[0])}
-            className="w-full"
-          />
-        </div>
-      )}
       </TabsContent>
 
       <TabsContent value="style" className="space-y-4 mt-4">
@@ -208,6 +213,167 @@ export const ControlPanel = ({
           </SelectContent>
         </Select>
       </div>
+      
+      {isLandscape && (
+        <div className="space-y-2">
+          <Label htmlFor="neighbor-range-slider" className="text-sm font-normal text-foreground">
+            Hover Overlay Range: ±{polynomialNeighborRange}
+          </Label>
+          <Slider
+            id="neighbor-range-slider"
+            min={0}
+            max={100}
+            step={1}
+            value={[polynomialNeighborRange]}
+            onValueChange={(value) => onPolynomialNeighborRangeChange(value[0])}
+            className="w-full"
+          />
+        </div>
+      )}
+      </TabsContent>
+
+      <TabsContent value="grids" className="space-y-3 mt-4">
+        {/* Snap toggle */}
+        <div className="flex items-center justify-between">
+          <Label htmlFor="snap-enabled" className="text-sm font-normal text-foreground">
+            Snap to Grid
+          </Label>
+          <Switch
+            id="snap-enabled"
+            checked={gridConfig.snapEnabled}
+            onCheckedChange={(checked) =>
+              onGridConfigChange({ ...gridConfig, snapEnabled: checked })
+            }
+          />
+        </div>
+
+        {/* Snap threshold */}
+        <div className="flex items-center gap-3">
+          <Label htmlFor="snap-threshold" className="text-sm font-normal text-foreground whitespace-nowrap">
+            Snap Threshold
+          </Label>
+          <Input
+            id="snap-threshold"
+            type="number"
+            step="0.01"
+            min="0.01"
+            max="1"
+            value={gridConfig.snapThreshold}
+            onChange={(e) => {
+              const val = parseFloat(e.target.value);
+              if (!isNaN(val) && val > 0) {
+                onGridConfigChange({ ...gridConfig, snapThreshold: val });
+              }
+            }}
+            className="bg-background/50 flex-1"
+          />
+        </div>
+
+        {/* Rectangular Grid */}
+        <div className="space-y-2 pt-2 border-t border-border/50">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="rect-enabled" className="text-sm font-medium text-foreground">
+              Rectangular Grid
+            </Label>
+            <Switch
+              id="rect-enabled"
+              checked={gridConfig.rectangular.enabled}
+              onCheckedChange={(checked) => updateGridConfig('rectangular', 'enabled', checked)}
+            />
+          </div>
+          {gridConfig.rectangular.enabled && (
+            <div className="flex items-center gap-3 pl-2">
+              <Label htmlFor="rect-step" className="text-sm font-normal text-foreground whitespace-nowrap">
+                Step Size
+              </Label>
+              <Input
+                id="rect-step"
+                type="number"
+                step="0.1"
+                min="0.1"
+                value={gridConfig.rectangular.step}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val) && val > 0) {
+                    updateGridConfig('rectangular', 'step', val);
+                  }
+                }}
+                className="bg-background/50 flex-1"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Concentric Circles */}
+        <div className="space-y-2 pt-2 border-t border-border/50">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="circles-enabled" className="text-sm font-medium text-foreground">
+              Concentric Circles
+            </Label>
+            <Switch
+              id="circles-enabled"
+              checked={gridConfig.circles.enabled}
+              onCheckedChange={(checked) => updateGridConfig('circles', 'enabled', checked)}
+            />
+          </div>
+          {gridConfig.circles.enabled && (
+            <div className="flex items-center gap-3 pl-2">
+              <Label htmlFor="circles-step" className="text-sm font-normal text-foreground whitespace-nowrap">
+                Radius Step
+              </Label>
+              <Input
+                id="circles-step"
+                type="number"
+                step="0.1"
+                min="0.1"
+                value={gridConfig.circles.step}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  if (!isNaN(val) && val > 0) {
+                    updateGridConfig('circles', 'step', val);
+                  }
+                }}
+                className="bg-background/50 flex-1"
+              />
+            </div>
+          )}
+        </div>
+
+        {/* Rays */}
+        <div className="space-y-2 pt-2 border-t border-border/50">
+          <div className="flex items-center justify-between">
+            <Label htmlFor="rays-enabled" className="text-sm font-medium text-foreground">
+              Rays from Origin
+            </Label>
+            <Switch
+              id="rays-enabled"
+              checked={gridConfig.rays.enabled}
+              onCheckedChange={(checked) => updateGridConfig('rays', 'enabled', checked)}
+            />
+          </div>
+          {gridConfig.rays.enabled && (
+            <div className="flex items-center gap-3 pl-2">
+              <Label htmlFor="rays-count" className="text-sm font-normal text-foreground whitespace-nowrap">
+                Ray Count
+              </Label>
+              <Input
+                id="rays-count"
+                type="number"
+                step="1"
+                min="2"
+                max="36"
+                value={gridConfig.rays.count}
+                onChange={(e) => {
+                  const val = parseInt(e.target.value, 10);
+                  if (!isNaN(val) && val >= 2) {
+                    updateGridConfig('rays', 'count', val);
+                  }
+                }}
+                className="bg-background/50 flex-1"
+              />
+            </div>
+          )}
+        </div>
       </TabsContent>
       </Tabs>
     </div>
