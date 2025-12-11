@@ -887,16 +887,59 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
     ctx.font = "14px -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
 
-    // Calculate appropriate tick spacing - aim for ~5 ticks per axis
-    // Use only powers of 10 (1, 10, 100, 1000...) or fractions (0.1, 0.01, 0.001...)
-    const baseSpacing = Math.pow(10, Math.floor(Math.log10(viewportWidth / 5)));
-    const tickSpacing = baseSpacing;
+    // Calculate appropriate tick spacing
+    // If rectangular grid is enabled, use its step (or a multiple of it)
+    // Otherwise, use "nice" numbers (1, 2, 5) × 10^n aiming for ~4-6 ticks
+    let tickSpacing: number;
+
+    if (gridConfig.rectangular.enabled && gridConfig.rectangular.step > 0) {
+      // Use grid step, but ensure we don't have too many ticks
+      const gridStep = gridConfig.rectangular.step;
+      const ticksWithGridStep = viewportWidth / gridStep;
+
+      if (ticksWithGridStep <= 8) {
+        tickSpacing = gridStep;
+      } else if (ticksWithGridStep <= 16) {
+        tickSpacing = gridStep * 2;
+      } else if (ticksWithGridStep <= 40) {
+        tickSpacing = gridStep * 5;
+      } else {
+        tickSpacing = gridStep * 10;
+      }
+    } else {
+      // Use "nice" numbers: 1, 2, 5 × 10^n
+      const rawSpacing = viewportWidth / 5;
+      const magnitude = Math.pow(10, Math.floor(Math.log10(rawSpacing)));
+      const normalized = rawSpacing / magnitude;
+
+      if (normalized < 1.5) {
+        tickSpacing = magnitude;
+      } else if (normalized < 3.5) {
+        tickSpacing = magnitude * 2;
+      } else if (normalized < 7.5) {
+        tickSpacing = magnitude * 5;
+      } else {
+        tickSpacing = magnitude * 10;
+      }
+    }
 
     // Calculate visible range with padding
     const startRe = Math.floor((offsetX - viewportWidth / 2) / tickSpacing) * tickSpacing;
     const endRe = Math.ceil((offsetX + viewportWidth / 2) / tickSpacing) * tickSpacing;
     const startIm = Math.floor((offsetY - viewportHeight / 2) / tickSpacing) * tickSpacing;
     const endIm = Math.ceil((offsetY + viewportHeight / 2) / tickSpacing) * tickSpacing;
+
+    // Helper to format tick label - show decimals only when needed
+    const formatTickLabel = (value: number): string => {
+      // Round to avoid floating point errors
+      const rounded = Math.round(value * 1e10) / 1e10;
+      if (Number.isInteger(rounded)) {
+        return rounded.toString();
+      }
+      // Determine decimal places needed based on tickSpacing
+      const decimals = Math.max(0, Math.ceil(-Math.log10(tickSpacing)));
+      return rounded.toFixed(decimals);
+    };
 
     // X-axis tickmarks
     ctx.textAlign = "center";
@@ -913,7 +956,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         ctx.lineTo(x, y0 + 5);
         ctx.stroke();
 
-        const label = tickSpacing < 1 ? re.toFixed(Math.max(0, -Math.log10(tickSpacing))) : re.toString();
+        const label = formatTickLabel(re);
         const labelY = y0 > canvas.height - 30 ? y0 - 20 : y0 + 15;
         ctx.fillText(label, x, labelY);
       }
@@ -934,8 +977,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         ctx.lineTo(x0 + 5, y);
         ctx.stroke();
 
-        const numStr = tickSpacing < 1 ? im.toFixed(Math.max(0, -Math.log10(tickSpacing))) : im.toString();
-        const label = numStr + "i";
+        const label = formatTickLabel(im) + "i";
         const labelX = x0 > canvas.width - 50 ? x0 - 55 : x0 + 10;
         ctx.fillText(label, labelX, y);
       }
