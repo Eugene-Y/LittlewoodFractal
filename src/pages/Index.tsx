@@ -3,6 +3,12 @@ import { FractalCanvas, FractalCanvasRef } from "@/components/FractalCanvas";
 import { ControlPanel } from "@/components/ControlPanel";
 import { toast } from "@/components/ui/sonner";
 import { GridConfig, DEFAULT_GRID_CONFIG } from "@/lib/grid";
+import {
+  generateCoefficient,
+  generateAllCoefficients,
+  DEFAULT_RE_FORMULA,
+  DEFAULT_IM_FORMULA,
+} from "@/lib/coefficientFormula";
 
 interface Complex {
   re: number;
@@ -54,6 +60,10 @@ const Index = () => {
     { re: 0, im: 0 },
   ]);
 
+  // Coefficient formula state
+  const [reFormula, setReFormula] = useState(DEFAULT_RE_FORMULA);
+  const [imFormula, setImFormula] = useState(DEFAULT_IM_FORMULA);
+
   const handleExportPNG = () => {
     const exportCanvas = fractalCanvasRef.current?.exportToCanvas();
     if (!exportCanvas) return;
@@ -99,15 +109,20 @@ const Index = () => {
   const handleCoefficientCountChange = (count: number) => {
     const newCoeffs = [...coefficients];
     if (count > coefficients.length) {
-      // Add new coefficients
+      // Add new coefficients using formula
       for (let i = coefficients.length; i < count; i++) {
-        const angle = (2 * Math.PI * i) / count;
-        newCoeffs.push({ re: Math.cos(angle), im: Math.sin(angle) });
+        newCoeffs.push(generateCoefficient(reFormula, imFormula, i, count));
       }
     } else {
       // Remove coefficients
       newCoeffs.length = count;
     }
+    setCoefficients(newCoeffs);
+  };
+
+  // Apply formula to all coefficients
+  const handleApplyFormula = () => {
+    const newCoeffs = generateAllCoefficients(reFormula, imFormula, coefficients.length);
     setCoefficients(newCoeffs);
   };
 
@@ -310,6 +325,16 @@ const Index = () => {
       setGridConfig(newGridConfig);
     }
 
+    // Parse coefficient formulas
+    const reFormulaParam = params.get('fre');
+    if (reFormulaParam) {
+      setReFormula(decodeURIComponent(reFormulaParam));
+    }
+    const imFormulaParam = params.get('fim');
+    if (imFormulaParam) {
+      setImFormula(decodeURIComponent(imFormulaParam));
+    }
+
     // Show navigation hint on page load
     toast('use +/- and dragging for navigation, double-click to reset view', {
       duration: 2000,
@@ -348,10 +373,18 @@ const Index = () => {
     params.set('gs', gridConfig.snapEnabled ? '1' : '0');
     params.set('gst', gridConfig.snapThreshold.toString());
 
+    // Coefficient formulas (only save if not default)
+    if (reFormula !== DEFAULT_RE_FORMULA) {
+      params.set('fre', encodeURIComponent(reFormula));
+    }
+    if (imFormula !== DEFAULT_IM_FORMULA) {
+      params.set('fim', encodeURIComponent(imFormula));
+    }
+
     // Update URL without reloading page or adding to history
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig]); // Update when any param changes
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, reFormula, imFormula]); // Update when any param changes
 
   // Track landscape/portrait mode
   useEffect(() => {
@@ -405,6 +438,11 @@ const Index = () => {
           onBlendModeChange={setBlendMode}
           gridConfig={gridConfig}
           onGridConfigChange={setGridConfig}
+          reFormula={reFormula}
+          imFormula={imFormula}
+          onReFormulaChange={setReFormula}
+          onImFormulaChange={setImFormula}
+          onApplyFormula={handleApplyFormula}
           onExportPNG={handleExportPNG}
           onExportLink={handleExportLink}
         />

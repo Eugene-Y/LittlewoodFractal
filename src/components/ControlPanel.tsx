@@ -5,8 +5,9 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
-import { Download, Link } from "lucide-react";
+import { Download, Link, RotateCcw } from "lucide-react";
 import { GridConfig } from "@/lib/grid";
+import { FORMULA_PRESETS, validateFormula } from "@/lib/coefficientFormula";
 
 interface ControlPanelProps {
   degree: number;
@@ -26,6 +27,11 @@ interface ControlPanelProps {
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
   gridConfig: GridConfig;
   onGridConfigChange: (config: GridConfig) => void;
+  reFormula: string;
+  imFormula: string;
+  onReFormulaChange: (value: string) => void;
+  onImFormulaChange: (value: string) => void;
+  onApplyFormula: () => void;
   onExportPNG: () => void;
   onExportLink: () => void;
 }
@@ -48,9 +54,18 @@ export const ControlPanel = ({
   onBlendModeChange,
   gridConfig,
   onGridConfigChange,
+  reFormula,
+  imFormula,
+  onReFormulaChange,
+  onImFormulaChange,
+  onApplyFormula,
   onExportPNG,
   onExportLink,
 }: ControlPanelProps) => {
+  // Validate formulas
+  const reError = validateFormula(reFormula);
+  const imError = validateFormula(imFormula);
+  const hasFormulaError = reError !== null || imError !== null;
   // Helper to update nested grid config
   const updateGridConfig = (
     section: 'rectangular' | 'circles' | 'rays',
@@ -145,6 +160,87 @@ export const ControlPanel = ({
           }}
           className="w-full"
         />
+      </div>
+
+      {/* Coefficient Formula Section */}
+      <div className="space-y-2 pt-3 border-t border-border/50">
+        <div className="flex items-center justify-between">
+          <Label className="text-sm font-medium text-foreground">
+            Coefficient Formula
+          </Label>
+          <Select
+            value=""
+            onValueChange={(presetName) => {
+              const preset = FORMULA_PRESETS.find(p => p.name === presetName);
+              if (preset) {
+                onReFormulaChange(preset.reFormula);
+                onImFormulaChange(preset.imFormula);
+              }
+            }}
+          >
+            <SelectTrigger className="w-[120px] h-8 text-xs">
+              <SelectValue placeholder="Presets..." />
+            </SelectTrigger>
+            <SelectContent>
+              {FORMULA_PRESETS.map((preset) => (
+                <SelectItem key={preset.name} value={preset.name}>
+                  <span className="text-xs">{preset.name}</span>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="re-formula" className="text-xs font-normal text-muted-foreground">
+            Re(z) =
+          </Label>
+          <Input
+            id="re-formula"
+            type="text"
+            value={reFormula}
+            onChange={(e) => onReFormulaChange(e.target.value)}
+            className={`bg-background/50 text-xs font-mono h-8 ${reError ? 'border-red-500' : ''}`}
+            placeholder="cos(2*pi*i/n)"
+          />
+          {reError && (
+            <p className="text-xs text-red-500">{reError}</p>
+          )}
+        </div>
+
+        <div className="space-y-1">
+          <Label htmlFor="im-formula" className="text-xs font-normal text-muted-foreground">
+            Im(z) =
+          </Label>
+          <Input
+            id="im-formula"
+            type="text"
+            value={imFormula}
+            onChange={(e) => onImFormulaChange(e.target.value)}
+            className={`bg-background/50 text-xs font-mono h-8 ${imError ? 'border-red-500' : ''}`}
+            placeholder="sin(2*pi*i/n)"
+          />
+          {imError && (
+            <p className="text-xs text-red-500">{imError}</p>
+          )}
+        </div>
+
+        <div className="flex gap-2">
+          <Button
+            onClick={onApplyFormula}
+            disabled={hasFormulaError}
+            size="sm"
+            variant="secondary"
+            className="flex-1 h-8 text-xs"
+          >
+            <RotateCcw className="w-3 h-3 mr-1" />
+            Apply to All
+          </Button>
+        </div>
+
+        <p className="text-xs text-muted-foreground">
+          Variables: i (index), n (count), pi, e
+        </p>
       </div>
       </TabsContent>
 
