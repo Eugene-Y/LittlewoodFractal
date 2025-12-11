@@ -253,9 +253,12 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     };
   }, [hoveredPolynomialIndex, degree, coefficients, polynomialNeighborRange, zoom, offsetX, offsetY]);
 
-  // Redraw overlay when grid config changes
+  // Store gridConfig in ref so renderFractal loop always uses latest value
+  const gridConfigRef = useRef(gridConfig);
   useEffect(() => {
-    redrawCoordinateOverlay();
+    gridConfigRef.current = gridConfig;
+    // Redraw overlay immediately with new grid config
+    redrawCoordinateOverlay(renderProgress, currentRenderFrame, isRendering, rootCount, theoreticalMaxRoots);
   }, [gridConfig]);
 
   useEffect(() => {
@@ -816,11 +819,14 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Draw grid lines (before axes so axes appear on top)
     ctx.lineWidth = 1;
 
+    // Use ref for grid config so we always get latest value during render loop
+    const currentGridConfig = gridConfigRef.current;
+
     // Rectangular grid
-    if (gridConfig.rectangular.enabled && gridConfig.rectangular.step > 0) {
+    if (currentGridConfig.rectangular.enabled && currentGridConfig.rectangular.step > 0) {
       ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
       ctx.beginPath();
-      const step = gridConfig.rectangular.step;
+      const step = currentGridConfig.rectangular.step;
 
       // Vertical lines
       const startX = Math.floor(minRe / step) * step;
@@ -843,10 +849,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     }
 
     // Concentric circles
-    if (gridConfig.circles.enabled && gridConfig.circles.step > 0) {
+    if (currentGridConfig.circles.enabled && currentGridConfig.circles.step > 0) {
       ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
       ctx.beginPath();
-      const step = gridConfig.circles.step;
+      const step = currentGridConfig.circles.step;
       // Calculate max radius as distance from origin (0,0) to the farthest viewport corner
       const cornerDistances = [
         Math.sqrt(minRe * minRe + minIm * minIm), // bottom-left
@@ -867,10 +873,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     }
 
     // Rays from origin
-    if (gridConfig.rays.enabled && gridConfig.rays.count > 0) {
+    if (currentGridConfig.rays.enabled && currentGridConfig.rays.count > 0) {
       ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
       ctx.beginPath();
-      const count = gridConfig.rays.count;
+      const count = currentGridConfig.rays.count;
       // Calculate max radius as distance from origin to farthest viewport corner
       const cornerDistances = [
         Math.sqrt(minRe * minRe + minIm * minIm),
@@ -912,9 +918,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Otherwise, use "nice" numbers (1, 2, 5) × 10^n aiming for ~4-6 ticks
     let tickSpacing: number;
 
-    if (gridConfig.rectangular.enabled && gridConfig.rectangular.step > 0) {
+    if (currentGridConfig.rectangular.enabled && currentGridConfig.rectangular.step > 0) {
       // Use grid step, but ensure we don't have too many ticks
-      const gridStep = gridConfig.rectangular.step;
+      const gridStep = currentGridConfig.rectangular.step;
       const ticksWithGridStep = viewportWidth / gridStep;
 
       if (ticksWithGridStep <= 8) {
