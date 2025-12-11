@@ -167,12 +167,16 @@ const Index = () => {
       }
     }
 
-    // Parse max roots (max)
+    // Parse max roots (max) - "inf" means Infinity
     const maxParam = params.get('max');
     if (maxParam) {
-      const parsedMax = Number(maxParam);
-      if (!isNaN(parsedMax) && Number.isInteger(parsedMax) && parsedMax > 0) {
-        setMaxRoots(parsedMax);
+      if (maxParam === 'inf') {
+        setMaxRoots(Infinity);
+      } else {
+        const parsedMax = Number(maxParam);
+        if (!isNaN(parsedMax) && parsedMax > 0) {
+          setMaxRoots(parsedMax);
+        }
       }
     }
 
@@ -325,7 +329,7 @@ const Index = () => {
       params.set(`c${i + 1}y`, coeff.im.toFixed(6));
     });
 
-    params.set('max', maxRoots.toString());
+    params.set('max', maxRoots === Infinity ? 'inf' : maxRoots.toString());
     params.set('t', transparency.toFixed(6));
     params.set('cbw', colorBandWidth.toFixed(6));
     params.set('bm', blendModeToIndex(blendMode).toString());

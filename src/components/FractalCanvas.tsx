@@ -72,6 +72,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   // Batch rendering state
   const [renderProgress, setRenderProgress] = useState(0);
   const [currentRenderFrame, setCurrentRenderFrame] = useState(0);
+  const [totalFramesToRender, setTotalFramesToRender] = useState(0); // Used for info only, not for render control
+  const [theoreticalMaxRoots, setTheoreticalMaxRoots] = useState(0); // Used for progress display
   const renderingRef = useRef<{ id: number; animationId?: number }>({ id: 0 });
 
   // Overlay rendering state (async)
@@ -267,6 +269,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const polynomialsToRender = skipRatio > 1 ? Math.ceil(totalPolynomials / skipInterval) : totalPolynomials;
     const framesToRender = Math.ceil(polynomialsToRender / BATCH_SIZE);
 
+    // Update theoretical max immediately for display (even before render starts)
+    setTheoreticalMaxRoots(theoreticalTotalRoots);
+    setTotalFramesToRender(framesToRender);
+
     const prev = previousRenderParams.current;
 
     // Check each parameter independently - any change triggers re-render
@@ -395,7 +401,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   Batch size: ${BATCH_SIZE.toLocaleString()} polynomials per frame
   Total polynomials: ${totalPolynomials.toLocaleString()}
   Theoretical max roots: ${theoreticalTotalRoots.toLocaleString()}
-  Max roots to draw: ${maxRoots.toLocaleString()}
+  Max roots to draw: ${maxRoots === Infinity ? '∞' : maxRoots.toLocaleString()}
   Skip interval: every ${skipInterval} polynomials
   Polynomials to render: ${polynomialsToRender.toLocaleString()} (${((polynomialsToRender / totalPolynomials) * 100).toFixed(1)}%)
   Frames to render: ${framesToRender.toLocaleString()}
@@ -485,7 +491,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       setCurrentRenderFrame(currentFrame);
 
       // Redraw overlay with current values (will use snapshot if interactive transform is active)
-      redrawCoordinateOverlay(progress, currentFrame, true);
+      redrawCoordinateOverlay(progress, currentFrame, true, processedRoots, theoreticalTotalRoots);
 
       // Continue or finish
       if (currentPolynomialIndex < polynomialsToRender) {
@@ -495,7 +501,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         setRenderProgress(100);
 
         // Final redraw without progress indicator (pass false for isRendering)
-        redrawCoordinateOverlay(100, currentFrame, false);
+        redrawCoordinateOverlay(100, currentFrame, false, processedRoots, theoreticalTotalRoots);
 
         // Clear rendering flag after final redraw
         setIsRendering(false);
@@ -739,7 +745,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
   };
 
   // Helper function to redraw the coordinate overlay
-  const redrawCoordinateOverlay = (currentProgress?: number, currentFrame?: number, currentIsRendering?: boolean) => {
+  const redrawCoordinateOverlay = (currentProgress?: number, currentFrame?: number, currentIsRendering?: boolean, currentRootCount?: number, currentTheoreticalMax?: number) => {
     const canvas = canvasRef.current;
     const offscreenCanvas = offscreenCanvasRef.current;
     if (!canvas || !offscreenCanvas) return;
@@ -1043,7 +1049,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
     // Draw progress indicator in bottom-right corner
     const displayProgress = currentProgress !== undefined ? currentProgress : renderProgress;
-    const displayFrame = currentFrame !== undefined ? currentFrame : currentRenderFrame;
     const displayIsRendering = currentIsRendering !== undefined ? currentIsRendering : isRendering;
 
     if (displayIsRendering && displayProgress > 0 && displayProgress < 100) {
@@ -1053,7 +1058,28 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.font = `${14 * dpr}px monospace`;
       ctx.textAlign = "right";
       ctx.textBaseline = "bottom";
-      ctx.fillText(`#${displayFrame} - ${displayProgress.toFixed(5)}%`, canvas.width - padding, canvas.height - padding);
+
+      // Format numbers with K/M/B suffixes or scientific notation for very large numbers
+      const formatNumber = (n: number): string => {
+        if (n >= 1e15) return n.toExponential(2); // 1.0e+15 and above
+        if (n >= 1_000_000_000_000) return (n / 1_000_000_000_000).toFixed(1) + 'T';
+        if (n >= 1_000_000_000) return (n / 1_000_000_000).toFixed(1) + 'B';
+        if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+        if (n >= 1_000) return (n / 1_000).toFixed(1) + 'K';
+        return n.toString();
+      };
+
+      // Format percentage - use scientific notation for very small increments
+      const formatPercent = (p: number): string => {
+        if (p < 0.01) return p.toExponential(2) + '%';
+        if (p < 1) return p.toFixed(2) + '%';
+        return p.toFixed(1) + '%';
+      };
+
+      const displayRootCount = currentRootCount !== undefined ? currentRootCount : rootCount;
+      const displayTheoreticalMax = currentTheoreticalMax !== undefined ? currentTheoreticalMax : theoreticalMaxRoots;
+      const progressText = `${formatPercent(displayProgress)} • ${formatNumber(displayRootCount)}/${formatNumber(displayTheoreticalMax)}`;
+      ctx.fillText(progressText, canvas.width - padding, canvas.height - padding);
     }
   };
 
