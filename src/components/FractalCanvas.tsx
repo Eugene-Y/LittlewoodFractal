@@ -724,6 +724,20 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
   };
 
+  // Tooltip state for showing coordinates
+  const [tooltip, setTooltip] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  // Update tooltip with coordinates
+  const updateTooltip = (screenX: number, screenY: number, re: number, im: number) => {
+    const text = `${re.toFixed(3)} ${im >= 0 ? '+' : ''}${im.toFixed(3)}i`;
+    setTooltip({ x: screenX, y: screenY, text });
+  };
+
+  // Clear tooltip
+  const clearTooltip = () => {
+    setTooltip(null);
+  };
+
   // Helper function to redraw the coordinate overlay
   const redrawCoordinateOverlay = (currentProgress?: number, currentFrame?: number, currentIsRendering?: boolean) => {
     const canvas = canvasRef.current;
@@ -1009,41 +1023,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       ctx.stroke();
     });
 
-    // Draw coordinates at mouse position
-    if (mousePos) {
-      const mouseRe = (mousePos.x - canvas.width / 2) / scale;
-      const mouseIm = -(mousePos.y - canvas.height / 2) / scale;
-
-      let coordText: string;
-
-      // If dragging, show coefficient coordinates, otherwise show mouse coordinates
-      if (draggedIndex !== null) {
-        const coeff = coefficients[draggedIndex];
-        coordText = `${coeff.re.toFixed(3)} ${coeff.im >= 0 ? '+' : ''}${coeff.im.toFixed(3)}i`;
-      } else {
-        coordText = `${mouseRe.toFixed(3)} ${mouseIm >= 0 ? '+' : ''}${mouseIm.toFixed(3)}i`;
-      }
-
-      ctx.font = `${14 * dpr}px monospace`;
-      ctx.textAlign = 'left';
-      ctx.textBaseline = 'top';
-
-      // Draw text background
-      const textMetrics = ctx.measureText(coordText);
-      const textWidth = textMetrics.width;
-      const textHeight = 14 * dpr;
-      const padding = 4 * dpr;
-
-      const textX = mousePos.x + 15 * dpr;
-      const textY = mousePos.y + 15 * dpr;
-
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.8)';
-      ctx.fillRect(textX - padding, textY - padding, textWidth + padding * 2, textHeight + padding * 2);
-
-      // Draw text
-      ctx.fillStyle = 'white';
-      ctx.fillText(coordText, textX, textY);
-    }
+    // Mouse coordinates are now drawn on overlay canvas via drawMouseCoordinates()
 
     // Draw polynomial strip border (thin vertical line) - only for landscape
     const isLandscape = canvas.width > canvas.height;
@@ -1084,6 +1064,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const rect = canvas.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * canvas.width;
     const y = ((e.clientY - rect.top) / rect.height) * canvas.height;
+    // Screen coordinates for tooltip positioning
+    const screenX = e.clientX;
+    const screenY = e.clientY;
 
     // Check if hovering over polynomial strip
     const dpr = window.devicePixelRatio || 1;
@@ -1097,8 +1080,6 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       const totalPolynomials = getTotalPolynomials(degree, coefficients.length);
 
       // Map Y position to polynomial index
-      // We want: top (y=0) -> index 0, bottom (y=height-1) -> index totalPolynomials-1
-      // Use Math.min to clamp the result to valid range
       const polynomialIndex = Math.min(
         totalPolynomials - 1,
         Math.floor((y / canvas.height) * totalPolynomials)
@@ -1108,6 +1089,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         setHoveredPolynomialIndex(polynomialIndex);
       }
       setMousePos({ x, y });
+      // Show mouse coordinates over strip
+      const coord = toComplexCoord(x, y);
+      updateTooltip(screenX, screenY, coord.re, coord.im);
       return;
     }
 
@@ -1117,20 +1101,20 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     }
 
     if (draggedIndex !== null) {
-      // Dragging a coefficient
+      // Dragging a coefficient - show coefficient coordinates (snapped)
       const rawCoord = toComplexCoord(x, y);
       const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig);
       const newCoord = { re: snapped.re, im: snapped.im };
       const newCoeffs = [...coefficients];
       newCoeffs[draggedIndex] = newCoord;
 
-      // Update mouse position for coordinate display
       setMousePos({ x, y });
-      redrawCoordinateOverlay();
+      // Show the snapped coefficient coordinates
+      updateTooltip(screenX, screenY, snapped.re, snapped.im);
 
       onCoefficientsChange(newCoeffs);
     } else if (isPanning && panStart) {
-      // Panning the view
+      // Panning the view - show mouse coordinates
       const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
       const scale = baseScale * zoom;
 
@@ -1139,16 +1123,24 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
       onOffsetChange(panStart.offsetX - dx, panStart.offsetY + dy);
 
-      // Update mouse position for coordinate display
       setMousePos({ x, y });
-      redrawCoordinateOverlay();
+      const coord = toComplexCoord(x, y);
+      updateTooltip(screenX, screenY, coord.re, coord.im);
     } else {
+      // Check if hovering over a coefficient
       const hoveredCoeff = getCoeffAtPoint(x, y);
       setHoveredIndex(hoveredCoeff);
 
-      // Update mouse position and trigger redraw
       setMousePos({ x, y });
-      redrawCoordinateOverlay();
+
+      // Show coefficient coordinates if hovering over one, otherwise mouse coordinates
+      if (hoveredCoeff !== null) {
+        const coeff = coefficients[hoveredCoeff];
+        updateTooltip(screenX, screenY, coeff.re, coeff.im);
+      } else {
+        const coord = toComplexCoord(x, y);
+        updateTooltip(screenX, screenY, coord.re, coord.im);
+      }
     }
   };
 
@@ -1166,6 +1158,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setIsPanning(false);
     setPanStart(null);
     setHoveredPolynomialIndex(null);
+    clearTooltip();
     endInteractiveTransform();
   };
 
@@ -1281,17 +1274,20 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       const rect = canvas.getBoundingClientRect();
       const x = ((touch.clientX - rect.left) / rect.width) * canvas.width;
       const y = ((touch.clientY - rect.top) / rect.height) * canvas.height;
+      const screenX = touch.clientX;
+      const screenY = touch.clientY;
 
       if (draggedIndex !== null) {
         // Dragging a coefficient
         setMousePos({ x, y });
-        redrawCoordinateOverlay();
 
         const rawCoord = toComplexCoord(x, y);
         const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig);
         const newCoord = { re: snapped.re, im: snapped.im };
         const newCoeffs = [...coefficients];
         newCoeffs[draggedIndex] = newCoord;
+
+        updateTooltip(screenX, screenY, snapped.re, snapped.im);
         onCoefficientsChange(newCoeffs);
         e.preventDefault();
       } else if (isPanning && panStart) {
@@ -1305,7 +1301,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         onOffsetChange(panStart.offsetX - dx, panStart.offsetY + dy);
 
         setMousePos({ x, y });
-        redrawCoordinateOverlay();
+        const coord = toComplexCoord(x, y);
+        updateTooltip(screenX, screenY, coord.re, coord.im);
         e.preventDefault();
       }
     }
@@ -1317,6 +1314,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     setIsPanning(false);
     setPanStart(null);
     setLastTouchDistance(null);
+    clearTooltip();
     endInteractiveTransform();
   };
 
@@ -1345,6 +1343,18 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       />
+      {/* Coordinate tooltip */}
+      {tooltip && (
+        <div
+          className="fixed pointer-events-none z-50 px-2 py-1 bg-black/80 text-white text-sm font-mono rounded"
+          style={{
+            left: tooltip.x + 15,
+            top: tooltip.y + 15,
+          }}
+        >
+          {tooltip.text}
+        </div>
+      )}
       {errorMessage && (
         <div className="absolute inset-0 flex items-center justify-center bg-background/80 backdrop-blur-sm p-8">
           <div className="bg-destructive/10 border border-destructive rounded-lg p-6 max-w-md">
