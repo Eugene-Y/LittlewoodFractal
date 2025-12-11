@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -27,11 +28,18 @@ interface ControlPanelProps {
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
   gridConfig: GridConfig;
   onGridConfigChange: (config: GridConfig) => void;
+  zoom: number;
   reFormula: string;
   imFormula: string;
   onReFormulaChange: (value: string) => void;
   onImFormulaChange: (value: string) => void;
   onApplyFormula: () => void;
+  onTransformStart: () => void;
+  onTransformEnd: () => void;
+  onScaleCoefficients: (scaleFactor: number) => void;
+  onRotateCoefficients: (angleDegrees: number) => void;
+  onTranslateCoefficients: (dx: number, dy: number) => void;
+  onRandomizeCoefficients: (amount: number) => void;
   onExportPNG: () => void;
   onExportLink: () => void;
 }
@@ -54,14 +62,27 @@ export const ControlPanel = ({
   onBlendModeChange,
   gridConfig,
   onGridConfigChange,
+  zoom,
   reFormula,
   imFormula,
   onReFormulaChange,
   onImFormulaChange,
   onApplyFormula,
+  onTransformStart,
+  onTransformEnd,
+  onScaleCoefficients,
+  onRotateCoefficients,
+  onTranslateCoefficients,
+  onRandomizeCoefficients,
   onExportPNG,
   onExportLink,
 }: ControlPanelProps) => {
+  // Local state for transform sliders (spring back to 0 on release)
+  const [scaleSlider, setScaleSlider] = useState(0);
+  const [rotateSlider, setRotateSlider] = useState(0);
+  const [hOffsetSlider, setHOffsetSlider] = useState(0);
+  const [vOffsetSlider, setVOffsetSlider] = useState(0);
+  const [randomizeSlider, setRandomizeSlider] = useState(0);
   // Validate formulas
   const reError = validateFormula(reFormula);
   const imError = validateFormula(imFormula);
@@ -85,9 +106,10 @@ export const ControlPanel = ({
       <Tabs defaultValue="polynomial" className="w-full">
         <div className="flex gap-2 items-center">
           <TabsList className="flex-1 bg-background/50 backdrop-blur-sm">
-            <TabsTrigger value="polynomial" className="flex-1">POLY</TabsTrigger>
-            <TabsTrigger value="style" className="flex-1">STYLE</TabsTrigger>
-            <TabsTrigger value="grids" className="flex-1">GRIDS</TabsTrigger>
+            <TabsTrigger value="polynomial" className="flex-1 text-xs px-2">POLY</TabsTrigger>
+            <TabsTrigger value="coeffs" className="flex-1 text-xs px-2">COEF</TabsTrigger>
+            <TabsTrigger value="style" className="flex-1 text-xs px-2">VIS</TabsTrigger>
+            <TabsTrigger value="grids" className="flex-1 text-xs px-2">GRID</TabsTrigger>
           </TabsList>
           <Button
             onClick={onExportPNG}
@@ -162,86 +184,248 @@ export const ControlPanel = ({
         />
       </div>
 
-      {/* Coefficient Formula Section */}
-      <div className="space-y-2 pt-3 border-t border-border/50">
-        <div className="flex items-center justify-between">
+      </TabsContent>
+
+      <TabsContent value="coeffs" className="space-y-4 mt-4">
+        {/* Coefficient Formula Section */}
+        <div className="space-y-2 pt-3 border-t border-border/50">
+          <div className="flex items-center justify-between">
+            <Label className="text-sm font-medium text-foreground">
+              Distribution Formula
+            </Label>
+            <Select
+              value=""
+              onValueChange={(presetName) => {
+                const preset = FORMULA_PRESETS.find(p => p.name === presetName);
+                if (preset) {
+                  onReFormulaChange(preset.reFormula);
+                  onImFormulaChange(preset.imFormula);
+                }
+              }}
+            >
+              <SelectTrigger className="w-[120px] h-8 text-xs">
+                <SelectValue placeholder="Presets..." />
+              </SelectTrigger>
+              <SelectContent>
+                {FORMULA_PRESETS.map((preset) => (
+                  <SelectItem key={preset.name} value={preset.name}>
+                    <span className="text-xs">{preset.name}</span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="re-formula" className="text-xs font-normal text-muted-foreground">
+              Re(z) =
+            </Label>
+            <Input
+              id="re-formula"
+              type="text"
+              value={reFormula}
+              onChange={(e) => onReFormulaChange(e.target.value)}
+              className={`bg-background/50 text-xs font-mono h-8 ${reError ? 'border-red-500' : ''}`}
+              placeholder="cos(2*pi*i/n)"
+            />
+            {reError && (
+              <p className="text-xs text-red-500">{reError}</p>
+            )}
+          </div>
+
+          <div className="space-y-1">
+            <Label htmlFor="im-formula" className="text-xs font-normal text-muted-foreground">
+              Im(z) =
+            </Label>
+            <Input
+              id="im-formula"
+              type="text"
+              value={imFormula}
+              onChange={(e) => onImFormulaChange(e.target.value)}
+              className={`bg-background/50 text-xs font-mono h-8 ${imError ? 'border-red-500' : ''}`}
+              placeholder="sin(2*pi*i/n)"
+            />
+            {imError && (
+              <p className="text-xs text-red-500">{imError}</p>
+            )}
+          </div>
+
+          <div className="flex gap-2">
+            <Button
+              onClick={onApplyFormula}
+              disabled={hasFormulaError}
+              size="sm"
+              variant="secondary"
+              className="flex-1 h-8 text-xs"
+            >
+              <RotateCcw className="w-3 h-3 mr-1" />
+              Apply to All
+            </Button>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            Variables: i (index), n (count), pi, e
+          </p>
+        </div>
+
+        {/* Transform Sliders - spring back to center on release */}
+        <div className="space-y-3 pt-3 border-t border-border/50">
           <Label className="text-sm font-medium text-foreground">
-            Coefficient Formula
+            Transform Coefficients
           </Label>
-          <Select
-            value=""
-            onValueChange={(presetName) => {
-              const preset = FORMULA_PRESETS.find(p => p.name === presetName);
-              if (preset) {
-                onReFormulaChange(preset.reFormula);
-                onImFormulaChange(preset.imFormula);
-              }
-            }}
-          >
-            <SelectTrigger className="w-[120px] h-8 text-xs">
-              <SelectValue placeholder="Presets..." />
-            </SelectTrigger>
-            <SelectContent>
-              {FORMULA_PRESETS.map((preset) => (
-                <SelectItem key={preset.name} value={preset.name}>
-                  <span className="text-xs">{preset.name}</span>
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="re-formula" className="text-xs font-normal text-muted-foreground">
-            Re(z) =
-          </Label>
-          <Input
-            id="re-formula"
-            type="text"
-            value={reFormula}
-            onChange={(e) => onReFormulaChange(e.target.value)}
-            className={`bg-background/50 text-xs font-mono h-8 ${reError ? 'border-red-500' : ''}`}
-            placeholder="cos(2*pi*i/n)"
-          />
-          {reError && (
-            <p className="text-xs text-red-500">{reError}</p>
-          )}
-        </div>
+          {/* Scale slider */}
+          <div className="space-y-1">
+            <Label htmlFor="scale-slider" className="text-xs font-normal text-muted-foreground">
+              Scale around center (drag & release)
+            </Label>
+            <Slider
+              id="scale-slider"
+              min={-100}
+              max={100}
+              step={1}
+              value={[scaleSlider]}
+              onPointerDown={() => onTransformStart()}
+              onValueChange={(value) => {
+                setScaleSlider(value[0]);
+                // Map -100..100 to 0.25..4 (log scale, center=1)
+                const scaleFactor = Math.pow(4, value[0] / 100);
+                onScaleCoefficients(scaleFactor);
+              }}
+              onValueCommit={() => {
+                onTransformEnd();
+                setScaleSlider(0);
+              }}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>÷4</span>
+              <span>×4</span>
+            </div>
+          </div>
 
-        <div className="space-y-1">
-          <Label htmlFor="im-formula" className="text-xs font-normal text-muted-foreground">
-            Im(z) =
-          </Label>
-          <Input
-            id="im-formula"
-            type="text"
-            value={imFormula}
-            onChange={(e) => onImFormulaChange(e.target.value)}
-            className={`bg-background/50 text-xs font-mono h-8 ${imError ? 'border-red-500' : ''}`}
-            placeholder="sin(2*pi*i/n)"
-          />
-          {imError && (
-            <p className="text-xs text-red-500">{imError}</p>
-          )}
-        </div>
+          {/* Rotation slider */}
+          <div className="space-y-1">
+            <Label htmlFor="rotate-slider" className="text-xs font-normal text-muted-foreground">
+              Rotate around center (drag & release)
+            </Label>
+            <Slider
+              id="rotate-slider"
+              min={-100}
+              max={100}
+              step={1}
+              value={[rotateSlider]}
+              onPointerDown={() => onTransformStart()}
+              onValueChange={(value) => {
+                setRotateSlider(value[0]);
+                // Map -100..100 to -180..180 degrees
+                const angle = (value[0] / 100) * 180;
+                onRotateCoefficients(angle);
+              }}
+              onValueCommit={() => {
+                onTransformEnd();
+                setRotateSlider(0);
+              }}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>-180°</span>
+              <span>+180°</span>
+            </div>
+          </div>
 
-        <div className="flex gap-2">
-          <Button
-            onClick={onApplyFormula}
-            disabled={hasFormulaError}
-            size="sm"
-            variant="secondary"
-            className="flex-1 h-8 text-xs"
-          >
-            <RotateCcw className="w-3 h-3 mr-1" />
-            Apply to All
-          </Button>
-        </div>
+          {/* Horizontal offset slider */}
+          <div className="space-y-1">
+            <Label htmlFor="hoffset-slider" className="text-xs font-normal text-muted-foreground">
+              Horizontal Shift (drag & release)
+            </Label>
+            <Slider
+              id="hoffset-slider"
+              min={-100}
+              max={100}
+              step={1}
+              value={[hOffsetSlider]}
+              onPointerDown={() => onTransformStart()}
+              onValueChange={(value) => {
+                setHOffsetSlider(value[0]);
+                // Map -100..100 to half of visible viewport width (3/zoom on each side)
+                const halfViewport = 3 / zoom;
+                const dx = (value[0] / 100) * halfViewport;
+                onTranslateCoefficients(dx, 0);
+              }}
+              onValueCommit={() => {
+                onTransformEnd();
+                setHOffsetSlider(0);
+              }}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>←</span>
+              <span>→</span>
+            </div>
+          </div>
 
-        <p className="text-xs text-muted-foreground">
-          Variables: i (index), n (count), pi, e
-        </p>
-      </div>
+          {/* Vertical offset slider */}
+          <div className="space-y-1">
+            <Label htmlFor="voffset-slider" className="text-xs font-normal text-muted-foreground">
+              Vertical Shift (drag & release)
+            </Label>
+            <Slider
+              id="voffset-slider"
+              min={-100}
+              max={100}
+              step={1}
+              value={[vOffsetSlider]}
+              onPointerDown={() => onTransformStart()}
+              onValueChange={(value) => {
+                setVOffsetSlider(value[0]);
+                // Map -100..100 to half of visible viewport height (3/zoom on each side)
+                const halfViewport = 3 / zoom;
+                const dy = (value[0] / 100) * halfViewport;
+                onTranslateCoefficients(0, dy);
+              }}
+              onValueCommit={() => {
+                onTransformEnd();
+                setVOffsetSlider(0);
+              }}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>↓</span>
+              <span>↑</span>
+            </div>
+          </div>
+
+          {/* Randomize slider */}
+          <div className="space-y-1">
+            <Label htmlFor="randomize-slider" className="text-xs font-normal text-muted-foreground">
+              Randomize (drag & release)
+            </Label>
+            <Slider
+              id="randomize-slider"
+              min={0}
+              max={100}
+              step={1}
+              value={[randomizeSlider]}
+              onPointerDown={() => onTransformStart()}
+              onValueChange={(value) => {
+                setRandomizeSlider(value[0]);
+                // Map 0..100 to 0..5% of magnitude
+                const amount = value[0] / 100 * 0.05;
+                onRandomizeCoefficients(amount);
+              }}
+              onValueCommit={() => {
+                onTransformEnd();
+                setRandomizeSlider(0);
+              }}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>0%</span>
+              <span>5%</span>
+            </div>
+          </div>
+        </div>
       </TabsContent>
 
       <TabsContent value="style" className="space-y-4 mt-4">
@@ -302,6 +486,9 @@ export const ControlPanel = ({
             <SelectItem value="screen">Screen</SelectItem>
             <SelectItem value="overlay">Overlay</SelectItem>
             <SelectItem value="color-dodge">Color Dodge</SelectItem>
+            <SelectItem value="hue">Hue</SelectItem>
+            <SelectItem value="difference">Difference</SelectItem>
+            <SelectItem value="xor">XOR</SelectItem>
           </SelectContent>
         </Select>
       </div>

@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { FractalCanvas, FractalCanvasRef } from "@/components/FractalCanvas";
 import { ControlPanel } from "@/components/ControlPanel";
 import { toast } from "@/components/ui/sonner";
@@ -29,6 +29,9 @@ const BLEND_MODES: GlobalCompositeOperation[] = [
   'screen',
   'overlay',
   'color-dodge',
+  'hue',
+  'difference',
+  'xor'
 ];
 
 const blendModeToIndex = (mode: GlobalCompositeOperation): number => {
@@ -125,6 +128,100 @@ const Index = () => {
     const newCoeffs = generateAllCoefficients(reFormula, imFormula, coefficients.length);
     setCoefficients(newCoeffs);
   };
+
+  // Coefficient transform state - use ref for immediate access (no async delay)
+  const transformBaseCoeffsRef = useRef<Complex[] | null>(null);
+  const randomOffsetsRef = useRef<{re: number, im: number}[] | null>(null);
+
+  // Start transform - capture current coefficients immediately and reset random offsets
+  const handleTransformStart = useCallback(() => {
+    transformBaseCoeffsRef.current = [...coefficients];
+    randomOffsetsRef.current = null; // Reset so new random offsets are generated each drag
+  }, [coefficients]);
+
+  // End transform - commit and reset base
+  const handleTransformEnd = useCallback(() => {
+    transformBaseCoeffsRef.current = null;
+  }, []);
+
+  // Transform: scale around center of mass (relative to base)
+  // scaleFactor: 0.25 to 4 (1 = no change)
+  const handleScaleCoefficients = useCallback((scaleFactor: number) => {
+    const base = transformBaseCoeffsRef.current || coefficients;
+    // Calculate center of mass
+    const centerRe = base.reduce((sum, c) => sum + c.re, 0) / base.length;
+    const centerIm = base.reduce((sum, c) => sum + c.im, 0) / base.length;
+    // Scale around center of mass
+    setCoefficients(base.map(c => ({
+      re: centerRe + (c.re - centerRe) * scaleFactor,
+      im: centerIm + (c.im - centerIm) * scaleFactor,
+    })));
+  }, [coefficients]);
+
+  // Transform: rotate around center of mass (relative to base)
+  // angleDegrees: -180 to 180
+  const handleRotateCoefficients = useCallback((angleDegrees: number) => {
+    const base = transformBaseCoeffsRef.current || coefficients;
+    // Calculate center of mass
+    const centerRe = base.reduce((sum, c) => sum + c.re, 0) / base.length;
+    const centerIm = base.reduce((sum, c) => sum + c.im, 0) / base.length;
+    const angleRad = (angleDegrees * Math.PI) / 180;
+    const cos = Math.cos(angleRad);
+    const sin = Math.sin(angleRad);
+    // Rotate around center of mass
+    setCoefficients(base.map(c => {
+      const dx = c.re - centerRe;
+      const dy = c.im - centerIm;
+      return {
+        re: centerRe + dx * cos - dy * sin,
+        im: centerIm + dx * sin + dy * cos,
+      };
+    }));
+  }, [coefficients]);
+
+  // Transform: translate (relative to base)
+  // dx, dy: offset in complex plane (viewport is 6 units wide, so ±1.5 is quarter screen)
+  const handleTranslateCoefficients = useCallback((dx: number, dy: number) => {
+    const base = transformBaseCoeffsRef.current || coefficients;
+    setCoefficients(base.map(c => ({
+      re: c.re + dx,
+      im: c.im + dy,
+    })));
+  }, [coefficients]);
+
+  // Transform: randomize coefficients
+  // amount: 0 to 0.05 (5% of magnitude)
+  // Randomly perturbs a random subset of coefficients
+  const handleRandomizeCoefficients = useCallback((amount: number) => {
+    const base = transformBaseCoeffsRef.current || coefficients;
+
+    // Generate random offsets once at the start of drag
+    if (!randomOffsetsRef.current) {
+      randomOffsetsRef.current = base.map(c => {
+        const magnitude = Math.sqrt(c.re * c.re + c.im * c.im) || 1;
+        // Random angle for perturbation
+        const angle = Math.random() * 2 * Math.PI;
+        // Random whether to perturb this coefficient (50% chance)
+        const shouldPerturb = Math.random() > 0.5;
+        return shouldPerturb ? {
+          re: Math.cos(angle) * magnitude,
+          im: Math.sin(angle) * magnitude,
+        } : { re: 0, im: 0 };
+      });
+    }
+
+    const offsets = randomOffsetsRef.current;
+    setCoefficients(base.map((c, i) => ({
+      re: c.re + offsets[i].re * amount,
+      im: c.im + offsets[i].im * amount,
+    })));
+  }, [coefficients]);
+
+  // Override handleTransformEnd to also clear random offsets
+  const handleTransformEndWithReset = useCallback(() => {
+    transformBaseCoeffsRef.current = null;
+    randomOffsetsRef.current = null;
+  }, []);
 
   const handleResetView = () => {
     setOffsetX(0);
@@ -438,11 +535,18 @@ const Index = () => {
           onBlendModeChange={setBlendMode}
           gridConfig={gridConfig}
           onGridConfigChange={setGridConfig}
+          zoom={zoom}
           reFormula={reFormula}
           imFormula={imFormula}
           onReFormulaChange={setReFormula}
           onImFormulaChange={setImFormula}
           onApplyFormula={handleApplyFormula}
+          onTransformStart={handleTransformStart}
+          onTransformEnd={handleTransformEndWithReset}
+          onScaleCoefficients={handleScaleCoefficients}
+          onRotateCoefficients={handleRotateCoefficients}
+          onTranslateCoefficients={handleTranslateCoefficients}
+          onRandomizeCoefficients={handleRandomizeCoefficients}
           onExportPNG={handleExportPNG}
           onExportLink={handleExportLink}
         />
