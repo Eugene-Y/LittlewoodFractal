@@ -271,13 +271,13 @@ export const ControlPanel = ({
         {/* Transform Sliders - spring back to center on release */}
         <div className="space-y-3 pt-3 border-t border-border/50">
           <Label className="text-sm font-medium text-foreground">
-            Transform Coefficients
+            Transform (drag & release)
           </Label>
 
           {/* Scale slider */}
           <div className="space-y-1">
             <Label htmlFor="scale-slider" className="text-xs font-normal text-muted-foreground">
-              Scale around center (drag & release)
+              Scale around center of masses
             </Label>
             <Slider
               id="scale-slider"
@@ -307,7 +307,7 @@ export const ControlPanel = ({
           {/* Rotation slider */}
           <div className="space-y-1">
             <Label htmlFor="rotate-slider" className="text-xs font-normal text-muted-foreground">
-              Rotate around center (drag & release)
+              Rotate around center of masses
             </Label>
             <Slider
               id="rotate-slider"
@@ -337,7 +337,7 @@ export const ControlPanel = ({
           {/* Horizontal offset slider */}
           <div className="space-y-1">
             <Label htmlFor="hoffset-slider" className="text-xs font-normal text-muted-foreground">
-              Horizontal Shift (drag & release)
+              Horizontal Shift
             </Label>
             <Slider
               id="hoffset-slider"
@@ -368,7 +368,7 @@ export const ControlPanel = ({
           {/* Vertical offset slider */}
           <div className="space-y-1">
             <Label htmlFor="voffset-slider" className="text-xs font-normal text-muted-foreground">
-              Vertical Shift (drag & release)
+              Vertical Shift
             </Label>
             <Slider
               id="voffset-slider"
@@ -399,7 +399,7 @@ export const ControlPanel = ({
           {/* Randomize slider */}
           <div className="space-y-1">
             <Label htmlFor="randomize-slider" className="text-xs font-normal text-muted-foreground">
-              Randomize (drag & release)
+              Randomize
             </Label>
             <Slider
               id="randomize-slider"
