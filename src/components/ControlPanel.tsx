@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Label } from "@/components/ui/label";
 import { Slider } from "@/components/ui/slider";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -83,6 +83,25 @@ export const ControlPanel = ({
   const [hOffsetSlider, setHOffsetSlider] = useState(0);
   const [vOffsetSlider, setVOffsetSlider] = useState(0);
   const [randomizeSlider, setRandomizeSlider] = useState(0);
+  const [activeSlider, setActiveSlider] = useState<string | null>(null);
+
+  // Global pointerup listener to reliably reset sliders
+  useEffect(() => {
+    const handlePointerUp = () => {
+      if (activeSlider) {
+        onTransformEnd();
+        setScaleSlider(0);
+        setRotateSlider(0);
+        setHOffsetSlider(0);
+        setVOffsetSlider(0);
+        setRandomizeSlider(0);
+        setActiveSlider(null);
+      }
+    };
+    window.addEventListener('pointerup', handlePointerUp);
+    return () => window.removeEventListener('pointerup', handlePointerUp);
+  }, [activeSlider, onTransformEnd]);
+
   // Validate formulas
   const reError = validateFormula(reFormula);
   const imError = validateFormula(imFormula);
@@ -285,16 +304,12 @@ export const ControlPanel = ({
               max={100}
               step={0.25}
               value={[scaleSlider]}
-              onPointerDown={() => onTransformStart()}
+              onPointerDown={() => { setActiveSlider('scale'); onTransformStart(); }}
               onValueChange={(value) => {
                 setScaleSlider(value[0]);
                 // Map -100..100 to 0.25..4 (log scale, center=1)
                 const scaleFactor = Math.pow(4, value[0] / 100);
                 onScaleCoefficients(scaleFactor);
-              }}
-              onValueCommit={() => {
-                onTransformEnd();
-                setScaleSlider(0);
               }}
               className="w-full"
             />
@@ -315,16 +330,12 @@ export const ControlPanel = ({
               max={100}
               step={0.25}
               value={[rotateSlider]}
-              onPointerDown={() => onTransformStart()}
+              onPointerDown={() => { setActiveSlider('rotate'); onTransformStart(); }}
               onValueChange={(value) => {
                 setRotateSlider(value[0]);
                 // Map -100..100 to -180..180 degrees
                 const angle = (value[0] / 100) * 180;
                 onRotateCoefficients(angle);
-              }}
-              onValueCommit={() => {
-                onTransformEnd();
-                setRotateSlider(0);
               }}
               className="w-full"
             />
@@ -345,17 +356,13 @@ export const ControlPanel = ({
               max={100}
               step={0.25}
               value={[hOffsetSlider]}
-              onPointerDown={() => onTransformStart()}
+              onPointerDown={() => { setActiveSlider('hoffset'); onTransformStart(); }}
               onValueChange={(value) => {
                 setHOffsetSlider(value[0]);
                 // Map -100..100 to half of visible viewport width (3/zoom on each side)
                 const halfViewport = 3 / zoom;
                 const dx = (value[0] / 100) * halfViewport;
                 onTranslateCoefficients(dx, 0);
-              }}
-              onValueCommit={() => {
-                onTransformEnd();
-                setHOffsetSlider(0);
               }}
               className="w-full"
             />
@@ -376,17 +383,13 @@ export const ControlPanel = ({
               max={100}
               step={0.25}
               value={[vOffsetSlider]}
-              onPointerDown={() => onTransformStart()}
+              onPointerDown={() => { setActiveSlider('voffset'); onTransformStart(); }}
               onValueChange={(value) => {
                 setVOffsetSlider(value[0]);
                 // Map -100..100 to half of visible viewport height (3/zoom on each side)
                 const halfViewport = 3 / zoom;
                 const dy = (value[0] / 100) * halfViewport;
                 onTranslateCoefficients(0, dy);
-              }}
-              onValueCommit={() => {
-                onTransformEnd();
-                setVOffsetSlider(0);
               }}
               className="w-full"
             />
@@ -407,16 +410,12 @@ export const ControlPanel = ({
               max={100}
               step={0.25}
               value={[randomizeSlider]}
-              onPointerDown={() => onTransformStart()}
+              onPointerDown={() => { setActiveSlider('randomize'); onTransformStart(); }}
               onValueChange={(value) => {
                 setRandomizeSlider(value[0]);
                 // Map 0..100 to 0..5% of magnitude
                 const amount = value[0] / 100 * 0.05;
                 onRandomizeCoefficients(amount);
-              }}
-              onValueCommit={() => {
-                onTransformEnd();
-                setRandomizeSlider(0);
               }}
               className="w-full"
             />
