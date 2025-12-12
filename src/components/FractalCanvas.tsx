@@ -221,6 +221,12 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // Only on desktop (not mobile)
       if (isMobile) return;
 
+      // Ignore when focus is in input fields (e.g., formula inputs)
+      const activeEl = document.activeElement;
+      if (activeEl && (activeEl.tagName === 'INPUT' || activeEl.tagName === 'TEXTAREA')) {
+        return;
+      }
+
       // + or = key (with or without shift) - zoom in 2x
       if (e.key === '+' || e.key === '=') {
         e.preventDefault();
