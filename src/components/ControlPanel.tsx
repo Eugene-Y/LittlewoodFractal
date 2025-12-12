@@ -296,7 +296,7 @@ export const ControlPanel = ({
           {/* Scale slider */}
           <div className="space-y-1">
             <Label htmlFor="scale-slider" className="text-xs font-normal text-muted-foreground">
-              Scale around center of masses
+              Scale around center of mass
             </Label>
             <Slider
               id="scale-slider"
@@ -315,6 +315,7 @@ export const ControlPanel = ({
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>÷4</span>
+              <span className="font-medium text-foreground">×{Math.pow(4, scaleSlider / 100).toFixed(2)}</span>
               <span>×4</span>
             </div>
           </div>
@@ -322,7 +323,7 @@ export const ControlPanel = ({
           {/* Rotation slider */}
           <div className="space-y-1">
             <Label htmlFor="rotate-slider" className="text-xs font-normal text-muted-foreground">
-              Rotate around center of masses
+              Rotate around center of mass
             </Label>
             <Slider
               id="rotate-slider"
@@ -341,6 +342,7 @@ export const ControlPanel = ({
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>-180°</span>
+              <span className="font-medium text-foreground">{((rotateSlider / 100) * 180).toFixed(1)}°</span>
               <span>+180°</span>
             </div>
           </div>
@@ -368,6 +370,7 @@ export const ControlPanel = ({
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>←</span>
+              <span className="font-medium text-foreground">{((hOffsetSlider / 100) * (3 / zoom)).toFixed(3)}</span>
               <span>→</span>
             </div>
           </div>
@@ -395,6 +398,7 @@ export const ControlPanel = ({
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>↓</span>
+              <span className="font-medium text-foreground">{((vOffsetSlider / 100) * (3 / zoom)).toFixed(3)}</span>
               <span>↑</span>
             </div>
           </div>
@@ -421,6 +425,7 @@ export const ControlPanel = ({
             />
             <div className="flex justify-between text-xs text-muted-foreground">
               <span>0%</span>
+              <span className="font-medium text-foreground">{(randomizeSlider / 100 * 5).toFixed(2)}%</span>
               <span>5%</span>
             </div>
           </div>
