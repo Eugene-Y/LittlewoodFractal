@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Download, Link, RotateCcw } from "lucide-react";
 import { GridConfig } from "@/lib/grid";
+import { SamplingConfig, SamplingMode } from "@/lib/sampling";
 import { FORMULA_PRESETS, validateFormula } from "@/lib/coefficientFormula";
 
 type TransformTarget = 'all' | 'even' | 'odd' | 'selected';
@@ -30,6 +31,8 @@ interface ControlPanelProps {
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
   gridConfig: GridConfig;
   onGridConfigChange: (config: GridConfig) => void;
+  samplingConfig: SamplingConfig;
+  onSamplingConfigChange: (config: SamplingConfig) => void;
   zoom: number;
   reFormula: string;
   imFormula: string;
@@ -67,6 +70,8 @@ export const ControlPanel = ({
   onBlendModeChange,
   gridConfig,
   onGridConfigChange,
+  samplingConfig,
+  onSamplingConfigChange,
   zoom,
   reFormula,
   imFormula,
@@ -209,6 +214,81 @@ export const ControlPanel = ({
           }}
           className="w-full"
         />
+      </div>
+
+      {/* Sampling Mode Section */}
+      <div className="space-y-3 pt-3 border-t border-border/50">
+        <Label className="text-sm font-medium text-foreground">Sampling</Label>
+
+        <div className="space-y-2">
+          <Select
+            value={samplingConfig.mode}
+            onValueChange={(v) => onSamplingConfigChange({ ...samplingConfig, mode: v as SamplingMode })}
+          >
+            <SelectTrigger id="sampling-mode" className="w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="uniform">Uniform (default)</SelectItem>
+              <SelectItem value="first">First N</SelectItem>
+              <SelectItem value="random">Random</SelectItem>
+              <SelectItem value="by_a0">By a₀ (free coeff)</SelectItem>
+              <SelectItem value="by_an">By aₙ (leading coeff)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        {/* Filter coefficient index - only show for by_a0 and by_an modes */}
+        {(samplingConfig.mode === 'by_a0' || samplingConfig.mode === 'by_an') && (
+          <div className="space-y-2">
+            <Label htmlFor="filter-coeff" className="text-xs font-normal text-muted-foreground">
+              Filter by coefficient #{samplingConfig.filterCoeffIndex + 1}
+            </Label>
+            <Slider
+              id="filter-coeff"
+              min={1}
+              max={coefficientCount}
+              step={1}
+              value={[samplingConfig.filterCoeffIndex + 1]}
+              onValueChange={(value) => onSamplingConfigChange({ ...samplingConfig, filterCoeffIndex: value[0] - 1 })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>1</span>
+              <span>{coefficientCount}</span>
+            </div>
+          </div>
+        )}
+
+        {/* Offset slider - only show for uniform and first modes when maxRoots is finite */}
+        {(samplingConfig.mode === 'uniform' || samplingConfig.mode === 'first') && maxRoots !== Infinity && (
+          <div className="space-y-2">
+            <Label htmlFor="sampling-offset" className="text-xs font-normal text-muted-foreground">
+              Offset: {(samplingConfig.offset * 100).toFixed(0)}%
+            </Label>
+            <Slider
+              id="sampling-offset"
+              min={0}
+              max={100}
+              step={1}
+              value={[samplingConfig.offset * 100]}
+              onValueChange={(value) => onSamplingConfigChange({ ...samplingConfig, offset: value[0] / 100 })}
+              className="w-full"
+            />
+            <div className="flex justify-between text-xs text-muted-foreground">
+              <span>0%</span>
+              <span>100%</span>
+            </div>
+          </div>
+        )}
+
+        <p className="text-xs text-muted-foreground">
+          {samplingConfig.mode === 'uniform' && 'Evenly distributed polynomial indices'}
+          {samplingConfig.mode === 'first' && 'First N polynomials without skipping'}
+          {samplingConfig.mode === 'random' && 'Pseudo-random step sizes for varied sampling'}
+          {samplingConfig.mode === 'by_a0' && 'Only polynomials with specific free coefficient (index % coeffsLength)'}
+          {samplingConfig.mode === 'by_an' && 'Only polynomials with specific leading coefficient'}
+        </p>
       </div>
 
       </TabsContent>

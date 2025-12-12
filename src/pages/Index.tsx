@@ -3,6 +3,7 @@ import { FractalCanvas, FractalCanvasRef } from "@/components/FractalCanvas";
 import { ControlPanel } from "@/components/ControlPanel";
 import { toast } from "@/components/ui/sonner";
 import { GridConfig, DEFAULT_GRID_CONFIG } from "@/lib/grid";
+import { SamplingConfig, DEFAULT_SAMPLING_CONFIG } from "@/lib/sampling";
 import {
   generateCoefficient,
   generateAllCoefficients,
@@ -57,6 +58,7 @@ const Index = () => {
   const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
   const maxIterations = 100; // Fixed value
   const [gridConfig, setGridConfig] = useState<GridConfig>(DEFAULT_GRID_CONFIG);
+  const [samplingConfig, setSamplingConfig] = useState<SamplingConfig>(DEFAULT_SAMPLING_CONFIG);
   const [coefficients, setCoefficients] = useState<Complex[]>([
     { re: 1, im: 0 },
     { re: -1, im: 0 },
@@ -473,6 +475,22 @@ const Index = () => {
       setGridConfig(newGridConfig);
     }
 
+    // Parse sampling config
+    const samplingModeParam = params.get('sm');
+    const samplingFilterParam = params.get('sf');
+    const samplingOffsetParam = params.get('so');
+    if (samplingModeParam) {
+      const validModes = ['uniform', 'first', 'random', 'by_a0', 'by_an'];
+      if (validModes.includes(samplingModeParam)) {
+        const offset = samplingOffsetParam ? Math.max(0, Math.min(1, parseFloat(samplingOffsetParam))) : 0;
+        setSamplingConfig({
+          mode: samplingModeParam as SamplingConfig['mode'],
+          filterCoeffIndex: samplingFilterParam ? Math.max(0, parseInt(samplingFilterParam, 10) - 1) : 0,
+          offset: isNaN(offset) ? 0 : offset,
+        });
+      }
+    }
+
     // Parse coefficient formulas
     const reFormulaParam = params.get('fre');
     if (reFormulaParam) {
@@ -521,6 +539,17 @@ const Index = () => {
     params.set('gs', gridConfig.snapEnabled ? '1' : '0');
     params.set('gst', gridConfig.snapThresholdPx.toString());
 
+    // Sampling config (only save if not default)
+    if (samplingConfig.mode !== 'uniform') {
+      params.set('sm', samplingConfig.mode);
+      if (samplingConfig.mode === 'by_a0' || samplingConfig.mode === 'by_an') {
+        params.set('sf', (samplingConfig.filterCoeffIndex + 1).toString()); // 1-based in URL
+      }
+    }
+    if (samplingConfig.offset > 0) {
+      params.set('so', samplingConfig.offset.toFixed(4));
+    }
+
     // Coefficient formulas (only save if not default)
     if (reFormula !== DEFAULT_RE_FORMULA) {
       params.set('fre', encodeURIComponent(reFormula));
@@ -532,7 +561,7 @@ const Index = () => {
     // Update URL without reloading page or adding to history
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, reFormula, imFormula]); // Update when any param changes
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, reFormula, imFormula]); // Update when any param changes
 
   // Track landscape/portrait mode
   useEffect(() => {
@@ -562,6 +591,7 @@ const Index = () => {
         zoom={zoom}
         polynomialNeighborRange={polynomialNeighborRange}
         gridConfig={gridConfig}
+        samplingConfig={samplingConfig}
         onOffsetChange={(x, y) => { setOffsetX(x); setOffsetY(y); }}
         onZoomChange={setZoom}
         onResetView={handleResetView}
@@ -587,6 +617,8 @@ const Index = () => {
           onBlendModeChange={setBlendMode}
           gridConfig={gridConfig}
           onGridConfigChange={setGridConfig}
+          samplingConfig={samplingConfig}
+          onSamplingConfigChange={setSamplingConfig}
           zoom={zoom}
           reFormula={reFormula}
           imFormula={imFormula}

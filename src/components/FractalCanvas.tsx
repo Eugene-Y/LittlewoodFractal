@@ -7,6 +7,7 @@ import {
   findRootsDurandKerner,
 } from "@/lib/math";
 import { GridConfig, snapToGrid } from "@/lib/grid";
+import { SamplingConfig, getPolynomialIndex } from "@/lib/sampling";
 
 interface FractalCanvasProps {
   degree: number;
@@ -24,6 +25,7 @@ interface FractalCanvasProps {
   zoom: number;
   polynomialNeighborRange: number;
   gridConfig: GridConfig;
+  samplingConfig: SamplingConfig;
   onOffsetChange: (x: number, y: number) => void;
   onZoomChange: (zoom: number) => void;
   onResetView: () => void;
@@ -42,7 +44,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -91,6 +93,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     offsetX: number;
     offsetY: number;
     zoom: number;
+    samplingMode: string;
+    samplingFilterIndex: number;
+    samplingOffset: number;
   }>({
     framesToRender: 0,
     degree: 0,
@@ -101,7 +106,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     canvasSize: { width: 0, height: 0 },
     offsetX: 0,
     offsetY: 0,
-    zoom: 1
+    zoom: 1,
+    samplingMode: 'uniform',
+    samplingFilterIndex: 0,
+    samplingOffset: 0
   });
   // Dynamic batch size based on polynomial complexity
   // Root finding is O(degree²) - degree has quadratic impact on cost
@@ -318,7 +326,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       prev.offsetX !== offsetX ||
       prev.offsetY !== offsetY ||
       prev.zoom !== zoom ||
-      prev.framesToRender !== framesToRender
+      prev.framesToRender !== framesToRender ||
+      prev.samplingMode !== samplingConfig.mode ||
+      prev.samplingFilterIndex !== samplingConfig.filterCoeffIndex ||
+      prev.samplingOffset !== samplingConfig.offset
     );
 
     if (shouldRender) {
@@ -333,7 +344,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         canvasSize: { ...canvasSize },
         offsetX,
         offsetY,
-        zoom
+        zoom,
+        samplingMode: samplingConfig.mode,
+        samplingFilterIndex: samplingConfig.filterCoeffIndex,
+        samplingOffset: samplingConfig.offset
       };
 
       // Always render in background, even during interactive transforms
@@ -341,7 +355,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // will be updated in background and displayed when gesture ends
       renderFractal();
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom, samplingConfig]);
 
   const renderFractal = async () => {
     const canvas = canvasRef.current;
@@ -426,7 +440,16 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       : `${(estimatedSeconds / 60).toFixed(1)}m`;
 
     // Log rendering info once at the start
+    const samplingModeLabel = {
+      uniform: 'Uniform',
+      first: 'First N',
+      random: 'Random',
+      by_a0: `By a₀ = coeff[${samplingConfig.filterCoeffIndex}]`,
+      by_an: `By aₙ = coeff[${samplingConfig.filterCoeffIndex}]`,
+    }[samplingConfig.mode];
+
     console.log(`[Fractal Render Start]
+  Sampling: ${samplingModeLabel}
   Batch size: ${BATCH_SIZE.toLocaleString()} polynomials per frame
   Total polynomials: ${totalPolynomials.toLocaleString()}
   Theoretical max roots: ${theoreticalTotalRoots.toLocaleString()}
@@ -466,14 +489,25 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       currentFrame++;
       const progress = (currentFrame / framesToRender) * 100;
 
-      // Process BATCH_SIZE polynomials with sparse indices (every skipInterval-th polynomial)
+      // Process BATCH_SIZE polynomials using sampling strategy
       let processedInThisFrame = 0;
       while (processedInThisFrame < BATCH_SIZE && currentPolynomialIndex < polynomialsToRender) {
-          // Calculate the actual polynomial index (with skip interval)
-          const polynomialIndex = currentPolynomialIndex * skipInterval;
+          // Calculate the actual polynomial index based on sampling mode
+          const polynomialIndex = getPolynomialIndex(
+            currentPolynomialIndex,
+            skipInterval,
+            samplingConfig,
+            totalPolynomials,
+            coefficients.length,
+            degree,
+            maxRoots
+          );
 
-          // Skip if we've gone past total polynomials
-          if (polynomialIndex >= totalPolynomials) break;
+          // Skip if index is invalid or we've gone past total polynomials
+          if (polynomialIndex < 0 || polynomialIndex >= totalPolynomials) {
+            currentPolynomialIndex++;
+            continue;
+          }
 
           const poly = generatePolynomialByIndex(polynomialIndex, degree, coefficients);
           const result = findRootsDurandKerner(poly, adaptiveMaxIterations);
