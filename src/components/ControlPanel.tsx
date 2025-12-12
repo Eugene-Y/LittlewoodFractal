@@ -10,6 +10,8 @@ import { Download, Link, RotateCcw } from "lucide-react";
 import { GridConfig } from "@/lib/grid";
 import { FORMULA_PRESETS, validateFormula } from "@/lib/coefficientFormula";
 
+type TransformTarget = 'all' | 'even' | 'odd' | 'selected';
+
 interface ControlPanelProps {
   degree: number;
   onDegreeChange: (value: number) => void;
@@ -34,6 +36,9 @@ interface ControlPanelProps {
   onReFormulaChange: (value: string) => void;
   onImFormulaChange: (value: string) => void;
   onApplyFormula: () => void;
+  transformTarget: TransformTarget;
+  onTransformTargetChange: (value: TransformTarget) => void;
+  lastSelectedIndex: number | null;
   onTransformStart: () => void;
   onTransformEnd: () => void;
   onScaleCoefficients: (scaleFactor: number) => void;
@@ -68,6 +73,9 @@ export const ControlPanel = ({
   onReFormulaChange,
   onImFormulaChange,
   onApplyFormula,
+  transformTarget,
+  onTransformTargetChange,
+  lastSelectedIndex,
   onTransformStart,
   onTransformEnd,
   onScaleCoefficients,
@@ -278,7 +286,7 @@ export const ControlPanel = ({
               className="flex-1 h-8 text-xs"
             >
               <RotateCcw className="w-3 h-3 mr-1" />
-              Apply to All
+              Apply
             </Button>
           </div>
 
@@ -289,9 +297,24 @@ export const ControlPanel = ({
 
         {/* Transform Sliders - spring back to center on release */}
         <div className="space-y-3 pt-3 border-t border-border/50">
-          <Label className="text-sm font-medium text-foreground">
-            Transform (drag & release)
-          </Label>
+          <div className="flex items-center justify-between gap-2">
+            <Label className="text-sm font-medium text-foreground whitespace-nowrap">
+              Transform
+            </Label>
+            <Select value={transformTarget} onValueChange={(v) => onTransformTargetChange(v as TransformTarget)}>
+              <SelectTrigger className="h-7 text-xs w-[120px]">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">All</SelectItem>
+                <SelectItem value="even">Even</SelectItem>
+                <SelectItem value="odd">Odd</SelectItem>
+                <SelectItem value="selected" disabled={lastSelectedIndex === null}>
+                  #{lastSelectedIndex !== null ? lastSelectedIndex : '?'}
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
           {/* Scale slider */}
           <div className="space-y-1">

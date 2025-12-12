@@ -63,6 +63,10 @@ const Index = () => {
     { re: 0, im: 0 },
   ]);
 
+  // Transform target state
+  const [lastSelectedIndex, setLastSelectedIndex] = useState<number | null>(null);
+  const [transformTarget, setTransformTarget] = useState<'all' | 'even' | 'odd' | 'selected'>('all');
+
   // Coefficient formula state
   const [reFormula, setReFormula] = useState(DEFAULT_RE_FORMULA);
   const [imFormula, setImFormula] = useState(DEFAULT_IM_FORMULA);
@@ -123,11 +127,18 @@ const Index = () => {
     setCoefficients(newCoeffs);
   };
 
-  // Apply formula to all coefficients
-  const handleApplyFormula = () => {
-    const newCoeffs = generateAllCoefficients(reFormula, imFormula, coefficients.length);
-    setCoefficients(newCoeffs);
-  };
+  // Apply formula to coefficients based on transformTarget
+  const handleApplyFormula = useCallback(() => {
+    const generated = generateAllCoefficients(reFormula, imFormula, coefficients.length);
+    setCoefficients(coefficients.map((c, i) => {
+      switch (transformTarget) {
+        case 'all': return generated[i];
+        case 'even': return i % 2 === 0 ? generated[i] : c;
+        case 'odd': return i % 2 === 1 ? generated[i] : c;
+        case 'selected': return i === lastSelectedIndex ? generated[i] : c;
+      }
+    }));
+  }, [reFormula, imFormula, coefficients, transformTarget, lastSelectedIndex]);
 
   // Coefficient transform state - use ref for immediate access (no async delay)
   const transformBaseCoeffsRef = useRef<Complex[] | null>(null);
@@ -144,32 +155,63 @@ const Index = () => {
     transformBaseCoeffsRef.current = null;
   }, []);
 
+  // Helper: check if coefficient at index should be transformed
+  const shouldTransform = useCallback((index: number): boolean => {
+    switch (transformTarget) {
+      case 'all': return true;
+      case 'even': return index % 2 === 0;
+      case 'odd': return index % 2 === 1;
+      case 'selected': return index === lastSelectedIndex;
+    }
+  }, [transformTarget, lastSelectedIndex]);
+
+  // Get indices that will be transformed (for center of mass calculation)
+  const getTransformIndices = useCallback((length: number): number[] => {
+    const indices: number[] = [];
+    for (let i = 0; i < length; i++) {
+      if (shouldTransform(i)) indices.push(i);
+    }
+    return indices;
+  }, [shouldTransform]);
+
   // Transform: scale around center of mass (relative to base)
   // scaleFactor: 0.25 to 4 (1 = no change)
   const handleScaleCoefficients = useCallback((scaleFactor: number) => {
     const base = transformBaseCoeffsRef.current || coefficients;
-    // Calculate center of mass
-    const centerRe = base.reduce((sum, c) => sum + c.re, 0) / base.length;
-    const centerIm = base.reduce((sum, c) => sum + c.im, 0) / base.length;
-    // Scale around center of mass
-    setCoefficients(base.map(c => ({
-      re: centerRe + (c.re - centerRe) * scaleFactor,
-      im: centerIm + (c.im - centerIm) * scaleFactor,
-    })));
-  }, [coefficients]);
+    const indices = getTransformIndices(base.length);
+    if (indices.length === 0) return;
+
+    // Calculate center of mass of affected coefficients only
+    const centerRe = indices.reduce((sum, i) => sum + base[i].re, 0) / indices.length;
+    const centerIm = indices.reduce((sum, i) => sum + base[i].im, 0) / indices.length;
+
+    // Scale around center of mass (only affected coefficients)
+    setCoefficients(base.map((c, i) => {
+      if (!shouldTransform(i)) return c;
+      return {
+        re: centerRe + (c.re - centerRe) * scaleFactor,
+        im: centerIm + (c.im - centerIm) * scaleFactor,
+      };
+    }));
+  }, [coefficients, shouldTransform, getTransformIndices]);
 
   // Transform: rotate around center of mass (relative to base)
   // angleDegrees: -180 to 180
   const handleRotateCoefficients = useCallback((angleDegrees: number) => {
     const base = transformBaseCoeffsRef.current || coefficients;
-    // Calculate center of mass
-    const centerRe = base.reduce((sum, c) => sum + c.re, 0) / base.length;
-    const centerIm = base.reduce((sum, c) => sum + c.im, 0) / base.length;
+    const indices = getTransformIndices(base.length);
+    if (indices.length === 0) return;
+
+    // Calculate center of mass of affected coefficients only
+    const centerRe = indices.reduce((sum, i) => sum + base[i].re, 0) / indices.length;
+    const centerIm = indices.reduce((sum, i) => sum + base[i].im, 0) / indices.length;
     const angleRad = (angleDegrees * Math.PI) / 180;
     const cos = Math.cos(angleRad);
     const sin = Math.sin(angleRad);
-    // Rotate around center of mass
-    setCoefficients(base.map(c => {
+
+    // Rotate around center of mass (only affected coefficients)
+    setCoefficients(base.map((c, i) => {
+      if (!shouldTransform(i)) return c;
       const dx = c.re - centerRe;
       const dy = c.im - centerIm;
       return {
@@ -177,17 +219,20 @@ const Index = () => {
         im: centerIm + dx * sin + dy * cos,
       };
     }));
-  }, [coefficients]);
+  }, [coefficients, shouldTransform, getTransformIndices]);
 
   // Transform: translate (relative to base)
   // dx, dy: offset in complex plane (viewport is 6 units wide, so ±1.5 is quarter screen)
   const handleTranslateCoefficients = useCallback((dx: number, dy: number) => {
     const base = transformBaseCoeffsRef.current || coefficients;
-    setCoefficients(base.map(c => ({
-      re: c.re + dx,
-      im: c.im + dy,
-    })));
-  }, [coefficients]);
+    setCoefficients(base.map((c, i) => {
+      if (!shouldTransform(i)) return c;
+      return {
+        re: c.re + dx,
+        im: c.im + dy,
+      };
+    }));
+  }, [coefficients, shouldTransform]);
 
   // Transform: randomize coefficients
   // amount: 0 to 0.05 (5% of magnitude)
@@ -197,12 +242,14 @@ const Index = () => {
 
     // Generate random offsets once at the start of drag
     if (!randomOffsetsRef.current) {
-      randomOffsetsRef.current = base.map(c => {
+      randomOffsetsRef.current = base.map((c, i) => {
+        if (!shouldTransform(i)) return { re: 0, im: 0 };
         const magnitude = Math.sqrt(c.re * c.re + c.im * c.im) || 1;
         // Random angle for perturbation
         const angle = Math.random() * 2 * Math.PI;
-        // Random whether to perturb this coefficient (50% chance)
-        const shouldPerturb = Math.random() > 0.5;
+        // If targeting a single selected coefficient, always perturb it
+        // Otherwise 50% chance to perturb each coefficient
+        const shouldPerturb = transformTarget === 'selected' || Math.random() > 0.5;
         return shouldPerturb ? {
           re: Math.cos(angle) * magnitude,
           im: Math.sin(angle) * magnitude,
@@ -215,7 +262,7 @@ const Index = () => {
       re: c.re + offsets[i].re * amount,
       im: c.im + offsets[i].im * amount,
     })));
-  }, [coefficients]);
+  }, [coefficients, shouldTransform, transformTarget]);
 
   // Override handleTransformEnd to also clear random offsets
   const handleTransformEndWithReset = useCallback(() => {
@@ -504,6 +551,7 @@ const Index = () => {
         degree={degree}
         coefficients={coefficients}
         onCoefficientsChange={setCoefficients}
+        onCoefficientSelect={setLastSelectedIndex}
         maxRoots={maxRoots}
         maxIterations={maxIterations}
         transparency={transparency}
@@ -545,6 +593,9 @@ const Index = () => {
           onReFormulaChange={setReFormula}
           onImFormulaChange={setImFormula}
           onApplyFormula={handleApplyFormula}
+          transformTarget={transformTarget}
+          onTransformTargetChange={setTransformTarget}
+          lastSelectedIndex={lastSelectedIndex}
           onTransformStart={handleTransformStart}
           onTransformEnd={handleTransformEndWithReset}
           onScaleCoefficients={handleScaleCoefficients}

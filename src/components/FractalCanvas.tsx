@@ -12,6 +12,7 @@ interface FractalCanvasProps {
   degree: number;
   coefficients: Complex[];
   onCoefficientsChange: (coefficients: Complex[]) => void;
+  onCoefficientSelect?: (index: number) => void;
   onRenderComplete?: () => void;
   maxRoots: number;
   maxIterations: number;
@@ -41,7 +42,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -592,6 +593,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     if (index !== null) {
       // Dragging a coefficient
       setDraggedIndex(index);
+      onCoefficientSelect?.(index);
     } else {
       // Start panning - create snapshot for interactive preview
       createSnapshot();
@@ -1294,6 +1296,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       if (index !== null) {
         // Dragging a coefficient
         setDraggedIndex(index);
+        onCoefficientSelect?.(index);
         e.preventDefault();
       } else {
         // Start panning - create snapshot
