@@ -1160,7 +1160,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     if (draggedIndex !== null) {
       // Dragging a coefficient - show coefficient coordinates (snapped)
       const rawCoord = toComplexCoord(x, y);
-      const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig);
+      const minCanvasSize = Math.min(canvasSize.width, canvasSize.height);
+      const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig, zoom, minCanvasSize);
       const newCoord = { re: snapped.re, im: snapped.im };
       const newCoeffs = [...coefficients];
       newCoeffs[draggedIndex] = newCoord;
@@ -1339,7 +1340,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         setMousePos({ x, y });
 
         const rawCoord = toComplexCoord(x, y);
-        const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig);
+        const minCanvasSize = Math.min(canvasSize.width, canvasSize.height);
+        const snapped = snapToGrid(rawCoord.re, rawCoord.im, gridConfig, zoom, minCanvasSize);
         const newCoord = { re: snapped.re, im: snapped.im };
         const newCoeffs = [...coefficients];
         newCoeffs[draggedIndex] = newCoord;

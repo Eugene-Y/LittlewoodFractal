@@ -411,9 +411,13 @@ const Index = () => {
     }
     const gstParam = params.get('gst');
     if (gstParam) {
-      const threshold = parseFloat(gstParam);
+      let threshold = parseFloat(gstParam);
       if (!isNaN(threshold) && threshold > 0) {
-        newGridConfig.snapThreshold = threshold;
+        // Backward compatibility: old values were in complex plane units (e.g., 0.05)
+        if (threshold < 1) {
+          threshold = 20;
+        }
+        newGridConfig.snapThresholdPx = threshold;
         hasGridParams = true;
       }
     }
@@ -468,7 +472,7 @@ const Index = () => {
     params.set('gry', gridConfig.rays.enabled ? '1' : '0');
     params.set('grc', gridConfig.rays.count.toString());
     params.set('gs', gridConfig.snapEnabled ? '1' : '0');
-    params.set('gst', gridConfig.snapThreshold.toString());
+    params.set('gst', gridConfig.snapThresholdPx.toString());
 
     // Coefficient formulas (only save if not default)
     if (reFormula !== DEFAULT_RE_FORMULA) {

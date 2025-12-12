@@ -528,19 +528,19 @@ export const ControlPanel = ({
         {/* Snap threshold */}
         <div className="flex items-center gap-3">
           <Label htmlFor="snap-threshold" className="text-sm font-normal text-foreground whitespace-nowrap">
-            Snap Threshold
+            Snap Threshold (px)
           </Label>
           <Input
             id="snap-threshold"
             type="number"
-            step="0.01"
-            min="0.01"
-            max="1"
-            value={gridConfig.snapThreshold}
+            step="1"
+            min="5"
+            max="100"
+            value={gridConfig.snapThresholdPx}
             onChange={(e) => {
               const val = parseFloat(e.target.value);
               if (!isNaN(val) && val > 0) {
-                onGridConfigChange({ ...gridConfig, snapThreshold: val });
+                onGridConfigChange({ ...gridConfig, snapThresholdPx: val });
               }
             }}
             className="bg-background/50 flex-1"

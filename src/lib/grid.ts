@@ -20,7 +20,7 @@ export interface GridConfig {
   };
   // Snap behavior
   snapEnabled: boolean;
-  snapThreshold: number; // Distance threshold for snapping (in complex plane units)
+  snapThresholdPx: number;
 }
 
 export const DEFAULT_GRID_CONFIG: GridConfig = {
@@ -37,7 +37,7 @@ export const DEFAULT_GRID_CONFIG: GridConfig = {
     count: 6,
   },
   snapEnabled: false,
-  snapThreshold: 0.05,
+  snapThresholdPx: 20,
 };
 
 export interface SnapResult {
@@ -62,13 +62,17 @@ const SNAP_PRIORITY: Record<NonNullable<SnapResult['snappedTo']>, number> = {
 export function snapToGrid(
   re: number,
   im: number,
-  config: GridConfig
+  config: GridConfig,
+  zoom: number,
+  canvasSize: number
 ): SnapResult {
   if (!config.snapEnabled) {
     return { re, im, snappedTo: null };
   }
 
-  const threshold = config.snapThreshold;
+  // Convert pixel threshold to complex plane units
+  // canvasSize pixels = 6/zoom units, so 1 pixel = 6/(zoom*canvasSize) units
+  const threshold = config.snapThresholdPx * 6 / (zoom * canvasSize);
   let bestRe = re;
   let bestIm = im;
   let bestDistance = threshold;
