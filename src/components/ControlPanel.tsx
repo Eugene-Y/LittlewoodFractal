@@ -32,6 +32,8 @@ interface ControlPanelProps {
   onColorModeChange: (value: ColorMode) => void;
   blendMode: GlobalCompositeOperation;
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
+  gammaCorrection: number;
+  onGammaCorrectionChange: (value: number) => void;
   gridConfig: GridConfig;
   onGridConfigChange: (config: GridConfig) => void;
   samplingConfig: SamplingConfig;
@@ -73,6 +75,8 @@ export const ControlPanel = ({
   onColorModeChange,
   blendMode,
   onBlendModeChange,
+  gammaCorrection,
+  onGammaCorrectionChange,
   gridConfig,
   onGridConfigChange,
   samplingConfig,
@@ -670,7 +674,22 @@ export const ControlPanel = ({
           </SelectContent>
         </Select>
       </div>
-      
+
+      <div className="space-y-2">
+        <Label htmlFor="gamma-slider" className="text-sm font-normal text-foreground">
+          Gamma: {Math.pow(10, gammaCorrection).toFixed(2)}
+        </Label>
+        <Slider
+          id="gamma-slider"
+          min={-3}
+          max={3}
+          step={0.01}
+          value={[gammaCorrection]}
+          onValueChange={(value) => onGammaCorrectionChange(value[0])}
+          className="w-full"
+        />
+      </div>
+
       {isLandscape && (
         <div className="space-y-2">
           <Label htmlFor="neighbor-range-slider" className="text-sm font-normal text-foreground">

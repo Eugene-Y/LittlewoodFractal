@@ -54,6 +54,7 @@ const Index = () => {
   const [colorBandWidth, setColorBandWidth] = useState(1.0); // 0.0 = batch size, 1.0 = total roots
   const [colorMode, setColorMode] = useState<ColorMode>('by_index');
   const [blendMode, setBlendMode] = useState<GlobalCompositeOperation>('source-over');
+  const [gammaCorrection, setGammaCorrection] = useState(0); // -1 to 1, 0 = linear (no correction)
   const [offsetX, setOffsetX] = useState(0); // Pan offset in complex plane units
   const [offsetY, setOffsetY] = useState(0); // Pan offset in complex plane units
   const [zoom, setZoom] = useState(1); // Zoom level (1 = default, 2 = 2x zoomed in)
@@ -379,6 +380,15 @@ const Index = () => {
       }
     }
 
+    // Parse gamma correction (gm)
+    const gmParam = params.get('gm');
+    if (gmParam) {
+      const parsedGm = parseFloat(gmParam);
+      if (!isNaN(parsedGm) && parsedGm >= -3 && parsedGm <= 3) {
+        setGammaCorrection(parsedGm);
+      }
+    }
+
     // Parse pan offset (0x, 0y)
     const oxParam = params.get('0x');
     if (oxParam) {
@@ -536,6 +546,7 @@ const Index = () => {
     params.set('cbw', colorBandWidth.toFixed(6));
     params.set('cm', colorMode);
     params.set('bm', blendModeToIndex(blendMode).toString());
+    params.set('gm', gammaCorrection.toFixed(6));
     params.set('0x', offsetX.toFixed(6));
     params.set('0y', offsetY.toFixed(6));
     params.set('z', zoom.toFixed(6));
@@ -573,7 +584,7 @@ const Index = () => {
     // Update URL without reloading page or adding to history
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, colorMode, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, reFormula, imFormula]); // Update when any param changes
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, colorMode, blendMode, gammaCorrection, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, reFormula, imFormula]); // Update when any param changes
 
   // Track landscape/portrait mode
   useEffect(() => {
@@ -599,6 +610,7 @@ const Index = () => {
         colorBandWidth={colorBandWidth}
         colorMode={colorMode}
         blendMode={blendMode}
+        gammaCorrection={gammaCorrection}
         offsetX={offsetX}
         offsetY={offsetY}
         zoom={zoom}
@@ -630,6 +642,8 @@ const Index = () => {
           onColorModeChange={setColorMode}
           blendMode={blendMode}
           onBlendModeChange={setBlendMode}
+          gammaCorrection={gammaCorrection}
+          onGammaCorrectionChange={setGammaCorrection}
           gridConfig={gridConfig}
           onGridConfigChange={setGridConfig}
           samplingConfig={samplingConfig}

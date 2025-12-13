@@ -22,6 +22,7 @@ interface FractalCanvasProps {
   colorBandWidth: number;
   colorMode: ColorMode;
   blendMode: GlobalCompositeOperation;
+  gammaCorrection: number;
   offsetX: number;
   offsetY: number;
   zoom: number;
@@ -51,11 +52,34 @@ const getAdaptiveMaxIterations = (degree: number): number => {
   return Math.min(200, Math.max(40, degree * 20));
 };
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+// Apply gamma correction to alpha channel only (negative = more opaque, positive = more transparent)
+const applyGammaCorrection = (ctx: CanvasRenderingContext2D, width: number, height: number, gammaCorrection: number) => {
+  if (gammaCorrection === 0) return; // No correction needed
+
+  const gamma = Math.pow(10, -gammaCorrection);
+  const imageData = ctx.getImageData(0, 0, width, height);
+  const data = imageData.data;
+
+  // Build lookup table for performance (256 values)
+  const lut = new Uint8ClampedArray(256);
+  for (let i = 0; i < 256; i++) {
+    lut[i] = Math.pow(i / 255, gamma) * 255;
+  }
+
+  // Apply gamma to alpha channel only (skip RGB)
+  for (let i = 0; i < data.length; i += 4) {
+    data[i + 3] = lut[data[i + 3]]; // Alpha
+  }
+
+  ctx.putImageData(imageData, 0, 0);
+};
+
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, gammaCorrection, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const gammaCorrectionRef = useRef(gammaCorrection);
   const [isRendering, setIsRendering] = useState(false);
   const [rootCount, setRootCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -367,6 +391,16 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       renderFractal();
     }
   }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, canvasSize, offsetX, offsetY, zoom, samplingConfig]);
+
+  // Keep gamma ref in sync with prop
+  useEffect(() => {
+    gammaCorrectionRef.current = gammaCorrection;
+  }, [gammaCorrection]);
+
+  // Separate effect for gamma correction - only triggers redraw, not full re-render
+  useEffect(() => {
+    redrawCoordinateOverlay();
+  }, [gammaCorrection]);
 
   const renderFractal = async () => {
     const canvas = canvasRef.current;
@@ -903,11 +937,38 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // SECOND: Draw current offscreen canvas on top to show rendering progress
       // This shows new roots being added in real-time during the gesture
       // Both canvases have transparent backgrounds, so they blend naturally
-      ctx.drawImage(offscreenCanvas, 0, 0);
+      const currentGamma = gammaCorrectionRef.current;
+      if (currentGamma !== 0) {
+        // Create temporary canvas for gamma-corrected offscreen
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = offscreenCanvas.width;
+        tempCanvas.height = offscreenCanvas.height;
+        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        if (tempCtx) {
+          tempCtx.drawImage(offscreenCanvas, 0, 0);
+          applyGammaCorrection(tempCtx, tempCanvas.width, tempCanvas.height, currentGamma);
+          ctx.drawImage(tempCanvas, 0, 0);
+        }
+      } else {
+        ctx.drawImage(offscreenCanvas, 0, 0);
+      }
     } else {
-      console.log('[Redraw] Using offscreen canvas only, isInteractive:', isInteractiveTransform);
+      const currentGamma = gammaCorrectionRef.current;
       // Normal rendering: draw accumulated roots from offscreen canvas
-      ctx.drawImage(offscreenCanvas, 0, 0);
+      if (currentGamma !== 0) {
+        // Create temporary canvas for gamma-corrected offscreen
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = offscreenCanvas.width;
+        tempCanvas.height = offscreenCanvas.height;
+        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        if (tempCtx) {
+          tempCtx.drawImage(offscreenCanvas, 0, 0);
+          applyGammaCorrection(tempCtx, tempCanvas.width, tempCanvas.height, currentGamma);
+          ctx.drawImage(tempCanvas, 0, 0);
+        }
+      } else {
+        ctx.drawImage(offscreenCanvas, 0, 0);
+      }
     }
 
     // Helper functions for coordinate transformation
