@@ -229,27 +229,28 @@ export const ControlPanel = ({
         />
       </div>
 
-      {/* Sampling Mode Section */}
-      <div className="space-y-3 pt-3 border-t border-border/50">
-        <Label className="text-sm font-medium text-foreground">Sampling</Label>
+      {/* Sampling Mode Section - only show when maxRoots is finite */}
+      {maxRoots !== Infinity && (
+        <div className="space-y-3 pt-3 border-t border-border/50">
+          <Label className="text-sm font-medium text-foreground">Sampling</Label>
 
-        <div className="space-y-2">
-          <Select
-            value={samplingConfig.mode}
-            onValueChange={(v) => onSamplingConfigChange({ ...samplingConfig, mode: v as SamplingMode })}
-          >
-            <SelectTrigger id="sampling-mode" className="w-full">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="uniform">Uniform (default)</SelectItem>
-              <SelectItem value="first">First N</SelectItem>
-              <SelectItem value="random">Random</SelectItem>
-              <SelectItem value="by_a0">By a₀ (free coeff)</SelectItem>
-              <SelectItem value="by_an">By aₙ (leading coeff)</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
+          <div className="space-y-2">
+            <Select
+              value={samplingConfig.mode}
+              onValueChange={(v) => onSamplingConfigChange({ ...samplingConfig, mode: v as SamplingMode })}
+            >
+              <SelectTrigger id="sampling-mode" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="uniform">Uniform (default)</SelectItem>
+                <SelectItem value="first">First N</SelectItem>
+                <SelectItem value="random">Random</SelectItem>
+                <SelectItem value="by_a0">By a₀ (free coeff)</SelectItem>
+                <SelectItem value="by_an">By aₙ (leading coeff)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
 
         {/* Filter coefficient index - only show for by_a0 and by_an modes */}
         {(samplingConfig.mode === 'by_a0' || samplingConfig.mode === 'by_an') && (
@@ -302,7 +303,8 @@ export const ControlPanel = ({
           {samplingConfig.mode === 'by_a0' && 'Only polynomials with specific free coefficient (index % coeffsLength)'}
           {samplingConfig.mode === 'by_an' && 'Only polynomials with specific leading coefficient'}
         </p>
-      </div>
+        </div>
+      )}
 
       </TabsContent>
 
