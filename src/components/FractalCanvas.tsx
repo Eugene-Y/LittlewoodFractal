@@ -46,6 +46,11 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
+// Calculate adaptive max iterations based on polynomial degree
+const getAdaptiveMaxIterations = (degree: number): number => {
+  return Math.min(200, Math.max(40, degree * 20));
+};
+
 export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -404,7 +409,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const theoreticalTotalRoots = totalPolynomials * degree;
 
     // Adaptive max iterations based on polynomial degree (2x increase for better convergence)
-    const adaptiveMaxIterations = Math.min(200, Math.max(40, degree * 20));
+    const adaptiveMaxIterations = getAdaptiveMaxIterations(degree);
 
     // Calculate polynomial skip interval to limit total rendered roots
     //
@@ -768,7 +773,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const endIndex = Math.min(totalPolynomials - 1, polynomialIndex + polynomialNeighborRange);
     const totalToRender = endIndex - startIndex + 1;
 
-    const adaptiveMaxIterations = Math.min(200, Math.max(40, degree * 20));
+    const adaptiveMaxIterations = getAdaptiveMaxIterations(degree);
     const OVERLAY_BATCH_SIZE = 8; // Process 8 polynomials per frame
 
     let currentPolyIdx = startIndex;
