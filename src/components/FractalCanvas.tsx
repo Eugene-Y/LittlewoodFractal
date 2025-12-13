@@ -8,6 +8,7 @@ import {
 } from "@/lib/math";
 import { GridConfig, snapToGrid } from "@/lib/grid";
 import { SamplingConfig, getPolynomialIndex } from "@/lib/sampling";
+import { ColorMode } from "@/pages/Index";
 
 interface FractalCanvasProps {
   degree: number;
@@ -19,6 +20,7 @@ interface FractalCanvasProps {
   maxIterations: number;
   transparency: number;
   colorBandWidth: number;
+  colorMode: ColorMode;
   blendMode: GlobalCompositeOperation;
   offsetX: number;
   offsetY: number;
@@ -44,7 +46,7 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -88,6 +90,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     coefficients: Complex[];
     transparency: number;
     colorBandWidth: number;
+    colorMode: ColorMode;
     blendMode: GlobalCompositeOperation;
     canvasSize: { width: number; height: number };
     offsetX: number;
@@ -102,6 +105,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     coefficients: [],
     transparency: 0,
     colorBandWidth: 0,
+    colorMode: 'by_index',
     blendMode: 'source-over',
     canvasSize: { width: 0, height: 0 },
     offsetX: 0,
@@ -320,6 +324,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       prev.coefficients.some((c, i) => c.re !== coefficients[i]?.re || c.im !== coefficients[i]?.im) ||
       prev.transparency !== transparency ||
       prev.colorBandWidth !== colorBandWidth ||
+      prev.colorMode !== colorMode ||
       prev.blendMode !== blendMode ||
       prev.canvasSize.width !== canvasSize.width ||
       prev.canvasSize.height !== canvasSize.height ||
@@ -340,6 +345,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         coefficients: [...coefficients],
         transparency,
         colorBandWidth,
+        colorMode,
         blendMode,
         canvasSize: { ...canvasSize },
         offsetX,
@@ -355,7 +361,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       // will be updated in background and displayed when gesture ends
       renderFractal();
     }
-  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, blendMode, canvasSize, offsetX, offsetY, zoom, samplingConfig]);
+  }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, canvasSize, offsetX, offsetY, zoom, samplingConfig]);
 
   const renderFractal = async () => {
     const canvas = canvasRef.current;
@@ -480,6 +486,48 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const minY = -margin;
     const maxY = canvas.height + margin;
 
+    // Hue calculation function - choose once based on colorMode, precompute constants
+    type HueCalculator = (polynomialIndex: number, poly: Complex[], rootIndex: number, processedInThisFrame: number) => number;
+
+    let calculateHue: HueCalculator;
+
+    if (colorMode === 'by_leading_coeff') {
+      // Precompute constants for leading coefficient mode
+      const coeffCount = coefficients.length;
+      const spacePerCoeff = 360 / coeffCount;
+      const maxBandWidth = 1 / 6;
+      const bandWidthFraction = Math.min(1 / (coeffCount * 2), maxBandWidth);
+      const bandWidthDegrees = bandWidthFraction * 360;
+      const polynomialsPerCoeff = totalPolynomials / coeffCount;
+
+      calculateHue = (polynomialIndex: number, poly: Complex[]) => {
+        const leadingCoeffIndex = poly[degree];
+        const leadingCoeffIndexInPalette = coefficients.findIndex(
+          c => c.re === leadingCoeffIndex.re && c.im === leadingCoeffIndex.im
+        );
+        const baseHue = leadingCoeffIndexInPalette * spacePerCoeff;
+
+        // colorBandWidth controls variation within each coefficient's band
+        // 0.0 = all polynomials with same coefficient get same hue (baseHue)
+        // 1.0 = full variation across the band (bandWidthDegrees)
+        const localPolyIndex = polynomialIndex % polynomialsPerCoeff;
+        const hueOffset = (localPolyIndex / polynomialsPerCoeff) * bandWidthDegrees * colorBandWidth;
+
+        return baseHue + hueOffset;
+      };
+    } else {
+      // Precompute constants for index-based mode
+      const frameSize = BATCH_SIZE * degree;
+
+      calculateHue = (polynomialIndex: number, _poly: Complex[], rootIndex: number, processedInThisFrame: number) => {
+        const theoreticalRootIndex = polynomialIndex * degree + rootIndex;
+        const indexWithinFrame = processedInThisFrame * degree + rootIndex;
+        const hueLocal = (indexWithinFrame / frameSize) * 360;
+        const hueGlobal = (theoreticalRootIndex / effectiveRootsForColor) * 360;
+        return hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
+      };
+    }
+
     // Frame processing function (processes BATCH_SIZE polynomials per frame)
     const processFrame = () => {
       // Check if this render has been cancelled (ID changed)
@@ -524,16 +572,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
               // Viewport culling: skip roots outside visible area
               if (x < minX || x > maxX || y < minY || y > maxY) return;
 
-              // Calculate hue with interpolation between frame-local and global indexing
-              // colorBandWidth: 0.0 = per frame, 1.0 = across all roots
-              const theoreticalRootIndex = polynomialIndex * degree + rootIndex;
-              const indexWithinFrame = processedInThisFrame * degree + rootIndex;
-              const frameSize = BATCH_SIZE * degree;
-
-              // Interpolate between two hue calculations
-              const hueLocal = (indexWithinFrame / frameSize) * 360; // Repeats per frame
-              const hueGlobal = (theoreticalRootIndex / effectiveRootsForColor) * 360; // Spans all roots
-              const hue = hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
+              // Calculate hue using precomputed function (no branching in hot loop)
+              const hue = calculateHue(polynomialIndex, poly, rootIndex, processedInThisFrame);
 
               // Simple solid color rendering (most performant)
               // Round coordinates to integer pixels for faster rendering

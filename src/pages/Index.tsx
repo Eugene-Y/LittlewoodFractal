@@ -23,6 +23,8 @@ interface ConvergenceStats {
   avgIterations: number;
 }
 
+export type ColorMode = 'by_index' | 'by_leading_coeff';
+
 // Blend mode mapping for URL encoding/decoding
 const BLEND_MODES: GlobalCompositeOperation[] = [
   'source-over',
@@ -50,6 +52,7 @@ const Index = () => {
   const [maxRoots, setMaxRoots] = useState(20000);
   const [transparency, setTransparency] = useState(0.9);
   const [colorBandWidth, setColorBandWidth] = useState(1.0); // 0.0 = batch size, 1.0 = total roots
+  const [colorMode, setColorMode] = useState<ColorMode>('by_index');
   const [blendMode, setBlendMode] = useState<GlobalCompositeOperation>('source-over');
   const [offsetX, setOffsetX] = useState(0); // Pan offset in complex plane units
   const [offsetY, setOffsetY] = useState(0); // Pan offset in complex plane units
@@ -359,6 +362,14 @@ const Index = () => {
       }
     }
 
+    // Parse color mode (cm)
+    const cmParam = params.get('cm');
+    if (cmParam) {
+      if (cmParam === 'by_index' || cmParam === 'by_leading_coeff') {
+        setColorMode(cmParam);
+      }
+    }
+
     // Parse blend mode (bm)
     const bmParam = params.get('bm');
     if (bmParam) {
@@ -523,6 +534,7 @@ const Index = () => {
     params.set('max', maxRoots === Infinity ? 'inf' : maxRoots.toString());
     params.set('t', transparency.toFixed(6));
     params.set('cbw', colorBandWidth.toFixed(6));
+    params.set('cm', colorMode);
     params.set('bm', blendModeToIndex(blendMode).toString());
     params.set('0x', offsetX.toFixed(6));
     params.set('0y', offsetY.toFixed(6));
@@ -561,7 +573,7 @@ const Index = () => {
     // Update URL without reloading page or adding to history
     const newUrl = `${window.location.pathname}?${params.toString()}`;
     window.history.replaceState({}, '', newUrl);
-  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, reFormula, imFormula]); // Update when any param changes
+  }, [degree, coefficients, maxRoots, transparency, colorBandWidth, colorMode, blendMode, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, reFormula, imFormula]); // Update when any param changes
 
   // Track landscape/portrait mode
   useEffect(() => {
@@ -585,6 +597,7 @@ const Index = () => {
         maxIterations={maxIterations}
         transparency={transparency}
         colorBandWidth={colorBandWidth}
+        colorMode={colorMode}
         blendMode={blendMode}
         offsetX={offsetX}
         offsetY={offsetY}
@@ -613,6 +626,8 @@ const Index = () => {
           onTransparencyChange={setTransparency}
           colorBandWidth={colorBandWidth}
           onColorBandWidthChange={setColorBandWidth}
+          colorMode={colorMode}
+          onColorModeChange={setColorMode}
           blendMode={blendMode}
           onBlendModeChange={setBlendMode}
           gridConfig={gridConfig}

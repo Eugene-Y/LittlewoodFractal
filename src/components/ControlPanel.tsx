@@ -10,6 +10,7 @@ import { Download, Link, RotateCcw } from "lucide-react";
 import { GridConfig } from "@/lib/grid";
 import { SamplingConfig, SamplingMode } from "@/lib/sampling";
 import { FORMULA_PRESETS, validateFormula } from "@/lib/coefficientFormula";
+import { ColorMode } from "@/pages/Index";
 
 type TransformTarget = 'all' | 'even' | 'odd' | 'selected';
 
@@ -27,6 +28,8 @@ interface ControlPanelProps {
   onTransparencyChange: (value: number) => void;
   colorBandWidth: number;
   onColorBandWidthChange: (value: number) => void;
+  colorMode: ColorMode;
+  onColorModeChange: (value: ColorMode) => void;
   blendMode: GlobalCompositeOperation;
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
   gridConfig: GridConfig;
@@ -66,6 +69,8 @@ export const ControlPanel = ({
   onTransparencyChange,
   colorBandWidth,
   onColorBandWidthChange,
+  colorMode,
+  onColorModeChange,
   blendMode,
   onBlendModeChange,
   gridConfig,
@@ -585,6 +590,21 @@ export const ControlPanel = ({
           onValueChange={(value) => onColorBandWidthChange(value[0])}
           className="w-full"
         />
+      </div>
+
+      <div className="flex items-center gap-3">
+        <Label htmlFor="color-mode-select" className="text-sm font-normal text-foreground whitespace-nowrap">
+          Color Mode
+        </Label>
+        <Select value={colorMode} onValueChange={(value) => onColorModeChange(value as ColorMode)}>
+          <SelectTrigger id="color-mode-select" className="flex-1">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="by_index">By Index</SelectItem>
+            <SelectItem value="by_leading_coeff">By Leading Coeff</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="flex items-center gap-3">
