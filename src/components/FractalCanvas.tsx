@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, forwardRef, useImperativeHandle } from "react";
 import { Loader2, AlertCircle } from "lucide-react";
+import { toast } from "@/components/ui/sonner";
 import {
   Complex,
   generatePolynomialByIndex,
@@ -24,6 +25,7 @@ interface FractalCanvasProps {
   blendMode: GlobalCompositeOperation;
   gammaCorrection: number;
   autoClearCanvas: boolean;
+  autoRestart: boolean;
   offsetX: number;
   offsetY: number;
   zoom: number;
@@ -166,12 +168,21 @@ const drawGrids = (
   }
 };
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, gammaCorrection, autoClearCanvas, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, gammaCorrection, autoClearCanvas, autoRestart, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const offscreenCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const gammaCorrectionRef = useRef(gammaCorrection);
+
+  // Refs for parameters that should update during live rendering when autoClearCanvas is false
+  const degreeRef = useRef(degree);
+  const coefficientsRef = useRef(coefficients);
+  const transparencyRef = useRef(transparency);
+  const colorBandWidthRef = useRef(colorBandWidth);
+  const colorModeRef = useRef(colorMode);
+  const blendModeRef = useRef(blendMode);
+
   const [isRendering, setIsRendering] = useState(false);
   const [rootCount, setRootCount] = useState(0);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -402,8 +413,29 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         return;
       }
 
+      // R key - restart render (only when at least one auto flag is off)
+      if (e.key === 'r' || e.key === 'R') {
+        if (!autoClearCanvas || !autoRestart) {
+          e.preventDefault();
+          renderFractal();
+        }
+      }
+      // C key - clear canvas (only when at least one auto flag is off)
+      else if (e.key === 'c' || e.key === 'C') {
+        if (!autoClearCanvas || !autoRestart) {
+          e.preventDefault();
+          const offscreenCanvas = offscreenCanvasRef.current;
+          if (offscreenCanvas) {
+            const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+            if (offscreenCtx) {
+              offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+              redrawCoordinateOverlay();
+            }
+          }
+        }
+      }
       // + or = key (with or without shift) - zoom in 2x
-      if (e.key === '+' || e.key === '=') {
+      else if (e.key === '+' || e.key === '=') {
         e.preventDefault();
         if (!isInteractiveTransform) {
           createSnapshot();
@@ -435,7 +467,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, [zoom, onZoomChange, isMobile, isInteractiveTransform]);
+  }, [zoom, onZoomChange, isMobile, isInteractiveTransform, autoClearCanvas, autoRestart]);
 
   // Handle polynomial overlay rendering when hoveredPolynomialIndex changes
   useEffect(() => {
@@ -480,7 +512,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
     // Check each parameter independently - any change triggers re-render
     // Exception: maxRoots only triggers if framesToRender actually changed
-    const shouldRender = (
+    // Exception: if autoClearCanvas is false, don't auto-render (use manual Restart button instead)
+    const paramsChanged = (
       prev.degree !== degree ||
       prev.coefficients.length !== coefficients.length ||
       prev.coefficients.some((c, i) => c.re !== coefficients[i]?.re || c.im !== coefficients[i]?.im) ||
@@ -499,8 +532,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       prev.samplingOffset !== samplingConfig.offset
     );
 
-    if (shouldRender) {
-      // Update previous render params
+    const shouldRender = paramsChanged && autoRestart;
+
+    if (paramsChanged) {
+      // Update previous params to avoid re-rendering accumulated changes
       previousRenderParams.current = {
         framesToRender,
         degree,
@@ -518,6 +553,19 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
         samplingOffset: samplingConfig.offset
       };
 
+      // Auto clear canvas if enabled (independent of auto restart)
+      if (autoClearCanvas) {
+        const offscreenCanvas = offscreenCanvasRef.current;
+        if (offscreenCanvas) {
+          const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+          if (offscreenCtx) {
+            offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+          }
+        }
+      }
+    }
+
+    if (shouldRender) {
       // Always render in background, even during interactive transforms
       // Snapshot will be shown to user for instant feedback, but offscreen canvas
       // will be updated in background and displayed when gesture ends
@@ -525,15 +573,34 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     }
   }, [degree, coefficients, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, canvasSize, offsetX, offsetY, zoom, samplingConfig]);
 
-  // Keep gamma ref in sync with prop
+  // Keep refs in sync with props for live updates during rendering
   useEffect(() => {
     gammaCorrectionRef.current = gammaCorrection;
-  }, [gammaCorrection]);
+    degreeRef.current = degree;
+    coefficientsRef.current = coefficients;
+    transparencyRef.current = transparency;
+    colorBandWidthRef.current = colorBandWidth;
+    colorModeRef.current = colorMode;
+    blendModeRef.current = blendMode;
+  }, [gammaCorrection, degree, coefficients, transparency, colorBandWidth, colorMode, blendMode]);
 
-  // Separate effect for gamma correction - only triggers redraw, not full re-render
+  // Show toast when switching to manual mode
   useEffect(() => {
-    redrawCoordinateOverlay();
-  }, [gammaCorrection]);
+    if (!autoClearCanvas || !autoRestart) {
+      toast('Press "C" to clear the canvas, "R" to restart calculation', {
+        duration: 3000,
+      });
+    }
+  }, [autoClearCanvas, autoRestart]);
+
+  // Separate effect for visual updates when autoRestart is OFF
+  // When autoRestart is ON, renderFractal already calls redrawCoordinateOverlay
+  // When autoRestart is OFF, we need to manually update the overlay for visual changes
+  useEffect(() => {
+    if (!autoRestart) {
+      redrawCoordinateOverlay();
+    }
+  }, [autoRestart, gammaCorrection, coefficients, offsetX, offsetY, zoom, gridConfig]);
 
   const renderFractal = async () => {
     const canvas = canvasRef.current;
@@ -560,13 +627,11 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     });
     if (!ctx || !offscreenCtx) return;
 
-    // Clear offscreen canvas (transparent background for roots accumulation) - only if autoClearCanvas is enabled
-    if (autoClearCanvas) {
-      offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
-    }
+    // Note: Canvas clearing is handled by the main useEffect based on autoClearCanvas setting
+    // This ensures clearing happens exactly once when params change, not every time renderFractal is called
 
-    // Set composite operation to blend semi-transparent pixels
-    offscreenCtx.globalCompositeOperation = blendMode;
+    // Set composite operation to blend semi-transparent pixels (read from ref for live updates)
+    offscreenCtx.globalCompositeOperation = blendModeRef.current;
 
     // Disable antialiasing for better performance
     offscreenCtx.imageSmoothingEnabled = false;
@@ -660,47 +725,44 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     const minY = -margin;
     const maxY = canvas.height + margin;
 
-    // Hue calculation function - choose once based on colorMode, precompute constants
+    // Hue calculation function - uses refs to read latest values during rendering
     type HueCalculator = (polynomialIndex: number, poly: Complex[], rootIndex: number, processedInThisFrame: number) => number;
 
-    let calculateHue: HueCalculator;
+    const calculateHue: HueCalculator = (polynomialIndex: number, poly: Complex[], rootIndex: number, processedInThisFrame: number) => {
+      const currentColorMode = colorModeRef.current;
+      const currentColorBandWidth = colorBandWidthRef.current;
+      const currentCoefficients = coefficientsRef.current;
+      const currentDegree = degreeRef.current;
 
-    if (colorMode === 'by_leading_coeff') {
-      // Precompute constants for leading coefficient mode
-      const coeffCount = coefficients.length;
-      const spacePerCoeff = 360 / coeffCount;
-      const maxBandWidth = 1 / 6;
-      const bandWidthFraction = Math.min(1 / (coeffCount * 2), maxBandWidth);
-      const bandWidthDegrees = bandWidthFraction * 360;
-      const polynomialsPerCoeff = totalPolynomials / coeffCount;
+      if (currentColorMode === 'by_leading_coeff') {
+        // Precompute constants for leading coefficient mode
+        const coeffCount = currentCoefficients.length;
+        const spacePerCoeff = 360 / coeffCount;
+        const maxBandWidth = 1 / 6;
+        const bandWidthFraction = Math.min(1 / (coeffCount * 2), maxBandWidth);
+        const bandWidthDegrees = bandWidthFraction * 360;
+        const polynomialsPerCoeff = totalPolynomials / coeffCount;
 
-      calculateHue = (polynomialIndex: number, poly: Complex[]) => {
-        const leadingCoeffIndex = poly[degree];
-        const leadingCoeffIndexInPalette = coefficients.findIndex(
+        const leadingCoeffIndex = poly[currentDegree];
+        const leadingCoeffIndexInPalette = currentCoefficients.findIndex(
           c => c.re === leadingCoeffIndex.re && c.im === leadingCoeffIndex.im
         );
         const baseHue = leadingCoeffIndexInPalette * spacePerCoeff;
 
-        // colorBandWidth controls variation within each coefficient's band
-        // 0.0 = all polynomials with same coefficient get same hue (baseHue)
-        // 1.0 = full variation across the band (bandWidthDegrees)
         const localPolyIndex = polynomialIndex % polynomialsPerCoeff;
-        const hueOffset = (localPolyIndex / polynomialsPerCoeff) * bandWidthDegrees * colorBandWidth;
+        const hueOffset = (localPolyIndex / polynomialsPerCoeff) * bandWidthDegrees * currentColorBandWidth;
 
         return baseHue + hueOffset;
-      };
-    } else {
-      // Precompute constants for index-based mode
-      const frameSize = BATCH_SIZE * degree;
-
-      calculateHue = (polynomialIndex: number, _poly: Complex[], rootIndex: number, processedInThisFrame: number) => {
-        const theoreticalRootIndex = polynomialIndex * degree + rootIndex;
-        const indexWithinFrame = processedInThisFrame * degree + rootIndex;
+      } else {
+        // Index-based mode
+        const frameSize = BATCH_SIZE * currentDegree;
+        const theoreticalRootIndex = polynomialIndex * currentDegree + rootIndex;
+        const indexWithinFrame = processedInThisFrame * currentDegree + rootIndex;
         const hueLocal = (indexWithinFrame / frameSize) * 360;
         const hueGlobal = (theoreticalRootIndex / effectiveRootsForColor) * 360;
-        return hueLocal * (1 - colorBandWidth) + hueGlobal * colorBandWidth;
-      };
-    }
+        return hueLocal * (1 - currentColorBandWidth) + hueGlobal * currentColorBandWidth;
+      }
+    };
 
     // Frame processing function (processes BATCH_SIZE polynomials per frame)
     const processFrame = () => {
@@ -731,7 +793,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
             continue;
           }
 
-          const poly = generatePolynomialByIndex(polynomialIndex, degree, coefficients);
+          const poly = generatePolynomialByIndex(polynomialIndex, degreeRef.current, coefficientsRef.current);
           const result = findRootsDurandKerner(poly, adaptiveMaxIterations);
 
           if (result.converged) {
@@ -751,7 +813,7 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
 
               // Simple solid color rendering (most performant)
               // Round coordinates to integer pixels for faster rendering
-              offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparency})`;
+              offscreenCtx.fillStyle = `hsla(${hue}, 100%, 60%, ${transparencyRef.current})`;
               offscreenCtx.fillRect(Math.round(x) - 1, Math.round(y) - 1, 2, 2);
 
               processedRoots++;
@@ -1241,7 +1303,9 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Draw coefficient dots as double rings
     const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
 
-    coefficients.forEach((coeff, index) => {
+    // Use ref to always show current coefficient positions
+    const currentCoefficients = coefficientsRef.current;
+    currentCoefficients.forEach((coeff, index) => {
       const x = toCanvasX(coeff.re);
       const y = toCanvasY(coeff.im);
 

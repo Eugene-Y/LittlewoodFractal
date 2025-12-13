@@ -56,6 +56,7 @@ const Index = () => {
   const [blendMode, setBlendMode] = useState<GlobalCompositeOperation>('source-over');
   const [gammaCorrection, setGammaCorrection] = useState(0); // -1 to 1, 0 = linear (no correction)
   const [autoClearCanvas, setAutoClearCanvas] = useState(true); // Auto-clear canvas on param changes (experimental)
+  const [autoRestart, setAutoRestart] = useState(true); // Auto-restart render on param changes (experimental)
   const [offsetX, setOffsetX] = useState(0); // Pan offset in complex plane units
   const [offsetY, setOffsetY] = useState(0); // Pan offset in complex plane units
   const [zoom, setZoom] = useState(1); // Zoom level (1 = default, 2 = 2x zoomed in)
@@ -613,6 +614,7 @@ const Index = () => {
         blendMode={blendMode}
         gammaCorrection={gammaCorrection}
         autoClearCanvas={autoClearCanvas}
+        autoRestart={autoRestart}
         offsetX={offsetX}
         offsetY={offsetY}
         zoom={zoom}
@@ -650,6 +652,8 @@ const Index = () => {
           onAutoClearCanvasChange={setAutoClearCanvas}
           onClearCanvasNow={() => fractalCanvasRef.current?.clearCanvas()}
           onRestartRender={() => fractalCanvasRef.current?.restartRender()}
+          autoRestart={autoRestart}
+          onAutoRestartChange={setAutoRestart}
           gridConfig={gridConfig}
           onGridConfigChange={setGridConfig}
           samplingConfig={samplingConfig}

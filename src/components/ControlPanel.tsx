@@ -38,6 +38,8 @@ interface ControlPanelProps {
   onAutoClearCanvasChange: (value: boolean) => void;
   onClearCanvasNow: () => void;
   onRestartRender: () => void;
+  autoRestart: boolean;
+  onAutoRestartChange: (value: boolean) => void;
   gridConfig: GridConfig;
   onGridConfigChange: (config: GridConfig) => void;
   samplingConfig: SamplingConfig;
@@ -85,6 +87,8 @@ export const ControlPanel = ({
   onAutoClearCanvasChange,
   onClearCanvasNow,
   onRestartRender,
+  autoRestart,
+  onAutoRestartChange,
   gridConfig,
   onGridConfigChange,
   samplingConfig,
@@ -716,6 +720,19 @@ export const ControlPanel = ({
         >
           Clear
         </Button>
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="auto-restart-switch" className="text-sm font-normal text-foreground whitespace-nowrap">
+            Auto Restart
+          </Label>
+          <Switch
+            id="auto-restart-switch"
+            checked={autoRestart}
+            onCheckedChange={onAutoRestartChange}
+          />
+        </div>
         <Button
           onClick={onRestartRender}
           variant="outline"
