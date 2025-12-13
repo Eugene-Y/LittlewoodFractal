@@ -208,3 +208,138 @@ This applies to ALL hot loops: root rendering, polynomial generation, coordinate
 - Check `renderFractal()` in FractalCanvas.tsx
 - `shouldRender` check in useEffect determines when to re-render
 - Add new params to `previousRenderParams` if they should trigger re-render
+
+## TODO: Future Improvements
+
+### HDR Accumulation Buffer (High Priority)
+
+**Problem:** When rendering many overlapping roots with low transparency, Canvas API clamps RGB values to [0, 255] on each pixel write. This causes saturation/clipping when accumulating many transparent pixels in the same location, limiting the dynamic range of the visualization.
+
+**Current Behavior:**
+- Each root drawn with `transparency = 0.001` adds ~0.25 to pixel value
+- After ~1000 overlapping roots, pixel saturates at 255
+- Gamma correction applied post-render cannot recover lost detail in saturated regions
+- Result: Dense root clusters lose fine detail and appear uniformly white
+
+**Solution Options:**
+
+#### Option 1: Float32Array Accumulation Buffer (Recommended)
+Store raw accumulated color values in a Float32Array, apply gamma/clamp only when displaying.
+
+**Implementation:**
+```typescript
+// In FractalCanvas.tsx
+const accumulationBuffer = useRef<Float32Array | null>(null);
+
+// Initialize buffer (once)
+accumulationBuffer.current = new Float32Array(width * height * 4); // RGBA
+
+// When drawing a root (in hot loop):
+const idx = (y * width + x) * 4;
+accumulationBuffer.current[idx + 0] += r * alpha; // R
+accumulationBuffer.current[idx + 1] += g * alpha; // G
+accumulationBuffer.current[idx + 2] += b * alpha; // B
+accumulationBuffer.current[idx + 3] += alpha;     // A
+
+// In redrawCoordinateOverlay() - convert to displayable image:
+const imageData = ctx.createImageData(width, height);
+for (let i = 0; i < buffer.length; i += 4) {
+  const r = accumulationBuffer.current[i + 0];
+  const g = accumulationBuffer.current[i + 1];
+  const b = accumulationBuffer.current[i + 2];
+  const a = accumulationBuffer.current[i + 3];
+
+  // Apply gamma correction to alpha
+  const gamma = Math.pow(10, -gammaCorrection);
+  const correctedAlpha = Math.pow(a / maxAlpha, gamma);
+
+  // Tonemap/clamp for display
+  imageData.data[i + 0] = Math.min(255, r);
+  imageData.data[i + 1] = Math.min(255, g);
+  imageData.data[i + 2] = Math.min(255, b);
+  imageData.data[i + 3] = Math.min(255, correctedAlpha * 255);
+}
+ctx.putImageData(imageData, 0, 0);
+```
+
+**Pros:**
+- ✅ No clamping during accumulation - full floating-point precision
+- ✅ Minimal code changes - replaces offscreen canvas with typed array
+- ✅ Canvas blend modes still work (applied during final composition)
+- ✅ Memory overhead: 4x width × height × 4 bytes (manageable for 1200×1200 = ~23MB)
+- ✅ Can add tonemapping operators (Reinhard, ACES, etc.) for artistic control
+
+**Cons:**
+- ❌ Doubles memory usage (accumulation buffer + display canvas)
+- ❌ Slightly more complex rendering pipeline
+- ❌ Need to clear buffer when restarting render
+
+**Changes Required:**
+1. Replace `offscreenCanvasRef` with `accumulationBufferRef: Float32Array`
+2. Modify hot loop in `renderFractal()` to write to buffer instead of canvas
+3. Add buffer-to-canvas conversion in `redrawCoordinateOverlay()`
+4. Handle buffer resize when canvas size changes
+5. Clear buffer when starting new render
+
+#### Option 2: WebGL with Float Textures
+Use WebGL to render to floating-point texture, apply gamma as fragment shader.
+
+**Implementation Sketch:**
+```glsl
+// Fragment shader for accumulation
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uAccumTexture;
+uniform vec4 uColor; // RGBA of current root
+void main() {
+  vec4 prev = texture2D(uAccumTexture, vUv);
+  gl_FragColor = prev + uColor; // HDR accumulation
+}
+
+// Fragment shader for display (with gamma)
+precision highp float;
+varying vec2 vUv;
+uniform sampler2D uAccumTexture;
+uniform float uGamma;
+void main() {
+  vec4 hdr = texture2D(uAccumTexture, vUv);
+  float gamma = pow(10.0, -uGamma);
+  float alpha = pow(hdr.a / maxAlpha, gamma);
+  gl_FragColor = vec4(min(hdr.rgb, 1.0), min(alpha, 1.0));
+}
+```
+
+**Pros:**
+- ✅ True HDR rendering (float32 textures)
+- ✅ GPU-accelerated gamma correction
+- ✅ Can add advanced post-processing (bloom, color grading, etc.)
+- ✅ Scales better for large canvases
+
+**Cons:**
+- ❌ Major rewrite - entire rendering pipeline moves to WebGL
+- ❌ Blend modes need reimplementation as shaders
+- ❌ Canvas2D features (text, lines) harder to integrate
+- ❌ Browser compatibility concerns (though widely supported now)
+- ❌ Debugging more complex
+
+**Changes Required:**
+1. Create WebGL context instead of 2D context
+2. Write vertex/fragment shaders for root rendering
+3. Implement ping-pong render targets for accumulation
+4. Port all Canvas2D drawing to WebGL
+5. Reimplement blend modes as shader variants
+
+#### Recommendation
+Start with **Option 1 (Float32Array)** because:
+- Minimal disruption to existing codebase
+- Immediate benefit for dense fractals
+- Reversible - can migrate to WebGL later if needed
+- Performance should be acceptable (hot loop already optimized)
+
+**Estimated Effort:** ~4-6 hours for Option 1, ~20+ hours for Option 2
+
+**Testing Strategy:**
+- Render degree=10, coefficients=3, maxRoots=1M with transparency=0.001
+- Compare saturated regions before/after HDR accumulation
+- Verify gamma adjustment works smoothly during rendering
+- Profile memory usage and frame time
