@@ -212,18 +212,59 @@ export const ControlPanel = ({
         </Label>
         <Slider
           id="maxroots-slider"
-          min={30}
-          max={130}
-          step={10}
-          value={[maxRoots === Infinity ? 130 : Math.log10(maxRoots) * 10]}
+          min={0}
+          max={(() => {
+            // Slider parameters
+            const NUM_ORDERS = 10; // From 10^3 to 10^12
+            const STEPS_PER_ORDER = 9; // 1k, 2k, ..., 9k within each order
+            return NUM_ORDERS * STEPS_PER_ORDER; // Last position = infinity
+          })()}
+          step={1}
+          value={[maxRoots === Infinity ? (() => {
+            const NUM_ORDERS = 10;
+            const STEPS_PER_ORDER = 9;
+            return NUM_ORDERS * STEPS_PER_ORDER; // Last position = infinity
+          })() : (() => {
+            // Reverse mapping: find slider position from maxRoots
+            const STEPS_PER_ORDER = 9;
+            const START_ORDER = 3; // Start from 10^3 = 1000
+
+            const order = Math.floor(Math.log10(maxRoots)); // e.g., 3 for 1000-9999
+            const orderBase = Math.pow(10, order); // 1000
+            const stepSize = orderBase; // 1000 within this order
+            const stepWithinOrder = Math.floor(maxRoots / stepSize) - 1; // 0-8 for 1k-9k
+
+            return (order - START_ORDER) * STEPS_PER_ORDER + stepWithinOrder;
+          })()]}
           onValueChange={(value) => {
-            // Logarithmic scale: 10^3 (1k) to 10^12, then ∞
-            if (value[0] >= 130) {
+            // Slider parameters
+            const NUM_ORDERS = 10;
+            const STEPS_PER_ORDER = 9;
+            const START_ORDER = 3; // 10^3 = 1000
+            const MAX_POSITION = NUM_ORDERS * STEPS_PER_ORDER;
+
+            const sliderValue = value[0];
+
+            // Last position = infinity
+            if (sliderValue >= MAX_POSITION) {
               onMaxRootsChange(Infinity);
-            } else {
-              const logValue = value[0] / 10;
-              onMaxRootsChange(Math.round(Math.pow(10, logValue)));
+              return;
             }
+
+            // Calculate which order we're in (0-9)
+            const orderIndex = Math.floor(sliderValue / STEPS_PER_ORDER);
+            // Calculate step within order (0-8)
+            const stepWithinOrder = sliderValue % STEPS_PER_ORDER;
+
+            // Actual order of magnitude (3-12)
+            const order = START_ORDER + orderIndex;
+            const orderBase = Math.pow(10, order);
+
+            // Result: (stepWithinOrder + 1) * orderBase
+            // e.g., step 0 → 1×1000 = 1000, step 1 → 2×1000 = 2000, ..., step 8 → 9×1000 = 9000
+            const result = (stepWithinOrder + 1) * orderBase;
+
+            onMaxRootsChange(result);
           }}
           className="w-full"
         />
