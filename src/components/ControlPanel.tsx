@@ -119,6 +119,9 @@ export const ControlPanel = ({
   const reError = validateFormula(reFormula);
   const imError = validateFormula(imFormula);
   const hasFormulaError = reError !== null || imError !== null;
+
+  // Collapsible tabs state - collapsed by default
+  const [activeTab, setActiveTab] = useState<string | null>(null);
   // Helper to update nested grid config
   const updateGridConfig = (
     section: 'rectangular' | 'circles' | 'rays',
@@ -133,15 +136,20 @@ export const ControlPanel = ({
       },
     });
   };
+  // Handle tab click - toggle if clicking active tab
+  const handleTabClick = (value: string) => {
+    setActiveTab(prev => prev === value ? null : value);
+  };
+
   return (
     <div className="space-y-3">
-      <Tabs defaultValue="polynomial" className="w-full">
+      <Tabs value={activeTab || ""} className="w-full">
         <div className="flex gap-2 items-center">
           <TabsList className="flex-1 bg-background/50 backdrop-blur-sm">
-            <TabsTrigger value="polynomial" className="flex-1 text-xs px-2">POLY</TabsTrigger>
-            <TabsTrigger value="coeffs" className="flex-1 text-xs px-2">COEF</TabsTrigger>
-            <TabsTrigger value="style" className="flex-1 text-xs px-2">VIS</TabsTrigger>
-            <TabsTrigger value="grids" className="flex-1 text-xs px-2">GRID</TabsTrigger>
+            <TabsTrigger value="polynomial" className="flex-1 text-xs px-2" onClick={() => handleTabClick("polynomial")}>POLY</TabsTrigger>
+            <TabsTrigger value="coeffs" className="flex-1 text-xs px-2" onClick={() => handleTabClick("coeffs")}>COEF</TabsTrigger>
+            <TabsTrigger value="style" className="flex-1 text-xs px-2" onClick={() => handleTabClick("style")}>VIS</TabsTrigger>
+            <TabsTrigger value="grids" className="flex-1 text-xs px-2" onClick={() => handleTabClick("grids")}>GRID</TabsTrigger>
           </TabsList>
           <Button
             onClick={onExportPNG}
