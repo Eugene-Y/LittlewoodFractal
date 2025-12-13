@@ -2,6 +2,21 @@
 
 Interactive visualization of roots of Littlewood polynomials - polynomials with coefficients constrained to a finite set of complex numbers.
 
+## **CRITICAL: Git Workflow Rules**
+
+**NEVER commit changes without explicit user approval.** This is a strict requirement.
+
+- ❌ **FORBIDDEN**: Running `git commit` on your own initiative
+- ❌ **FORBIDDEN**: Preparing commits "for the user to review"
+- ✅ **ALLOWED**: Running `git add` and `git status` to show what changed
+- ✅ **REQUIRED**: Wait for explicit user instruction like "commit this" or "make a commit"
+
+When the user asks you to commit:
+1. Follow the Git Safety Protocol in your system instructions
+2. Review changes with `git status` and `git diff`
+3. Draft a commit message following the repository's style
+4. Execute the commit only after user confirmation
+
 ## What This Project Does
 
 Renders the roots of polynomials of the form:
@@ -66,7 +81,7 @@ src/
 - Collapsible tabs (click active tab to collapse, collapsed by default)
 - **POLY tab**: degree, coefficient count, max roots, sampling mode/offset
 - **COEF tab**: formula editor, transform sliders (scale/rotate/translate/randomize)
-- **VIS tab**: transparency, color band width, blend mode
+- **VIS tab**: transparency, color band width, color mode (by index / by leading coeff), blend mode
 - **GRID tab**: rectangular grid, circles, rays, snap settings
 
 ### `src/pages/Index.tsx`
@@ -87,7 +102,9 @@ index = c₀ + c₁×N + c₂×N² + ... + cₙ×Nⁿ
 2. For each batch, get polynomial index via sampling strategy
 3. Generate polynomial coefficients from index
 4. Find roots using Durand-Kerner iteration
-5. Draw each root as a colored pixel (HSL color based on polynomial index)
+5. Draw each root as a colored pixel (HSL color based on color mode):
+   - **by_index**: Hue varies smoothly across all polynomials (rainbow gradient)
+   - **by_leading_coeff**: Roots grouped by leading coefficient (aₙ), each group gets distinct hue band (~10°) with gaps between groups for visual separation
 
 ### Transform System
 - Base coefficients captured on `pointerdown`
@@ -109,6 +126,7 @@ index = c₀ + c₁×N + c₂×N² + ... + cₙ×Nⁿ
 | `max` | Max roots ('inf' for unlimited) |
 | `t` | Transparency (0.001-1.0) |
 | `cbw` | Color band width (0-1) |
+| `cm` | Color mode ('by_index' / 'by_leading_coeff') |
 | `bm` | Blend mode index |
 | `0x`, `0y` | Pan offset |
 | `z` | Zoom level |
@@ -127,6 +145,49 @@ index = c₀ + c₁×N + c₂×N² + ... + cₙ×Nⁿ
 - Adaptive max iterations for root finding: `50 + degree × 3`
 - Viewport culling: roots outside visible area not drawn
 - When `maxRoots = Infinity`, sampling settings bypassed (simple iteration)
+
+### **CRITICAL: Hot Loop Optimization**
+
+The rendering loop processes millions of roots and must be kept as fast as possible. **Always follow these rules:**
+
+1. **NO branching in hot loops** - Avoid `if/else` statements inside loops that process roots or polynomials
+   - ❌ BAD: `if (colorMode === 'by_leading_coeff') { ... } else { ... }` inside root rendering loop
+   - ✅ GOOD: Choose function pointer once before loop, call through pointer inside loop
+
+2. **Precompute constants** - Calculate invariant values outside the loop
+   - ❌ BAD: `const bandWidth = 1 / (coeffCount * 2)` recalculated for every root
+   - ✅ GOOD: Calculate once before loop, capture in closure or pass as parameter
+
+3. **Support auto-vectorization** - Write loops that compilers can parallelize
+   - Use simple arithmetic operations
+   - Avoid complex control flow
+   - Keep loop bodies small and focused
+   - Minimize function calls inside loops
+
+4. **Example pattern:**
+```typescript
+// BEFORE (slow - branching in hot loop)
+result.roots.forEach((root) => {
+  if (colorMode === 'by_leading_coeff') {
+    const bandWidth = 1 / (coeffCount * 2); // recalculated!
+    hue = calculateLeadingCoeff(...);
+  } else {
+    hue = calculateIndex(...);
+  }
+});
+
+// AFTER (fast - precomputed function pointer)
+const bandWidth = 1 / (coeffCount * 2); // once!
+const calculateHue = colorMode === 'by_leading_coeff'
+  ? (p, i) => { /* uses bandWidth from closure */ }
+  : (p, i) => { /* ... */ };
+
+result.roots.forEach((root) => {
+  hue = calculateHue(poly, index); // no branching!
+});
+```
+
+This applies to ALL hot loops: root rendering, polynomial generation, coordinate transformations, etc.
 
 ## Common Tasks
 
