@@ -74,6 +74,95 @@ const applyGammaCorrection = (ctx: CanvasRenderingContext2D, width: number, heig
   ctx.putImageData(imageData, 0, 0);
 };
 
+// Draw grid overlays (rectangular, circles, rays)
+const drawGrids = (
+  ctx: CanvasRenderingContext2D,
+  gridConfig: GridConfig,
+  minRe: number,
+  maxRe: number,
+  minIm: number,
+  maxIm: number,
+  scale: number,
+  toCanvasX: (re: number) => number,
+  toCanvasY: (im: number) => number,
+  canvasWidth: number,
+  canvasHeight: number
+) => {
+  // Rectangular grid
+  if (gridConfig.rectangular.enabled && gridConfig.rectangular.step > 0) {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.beginPath();
+    const step = gridConfig.rectangular.step;
+
+    // Vertical lines
+    const startX = Math.floor(minRe / step) * step;
+    for (let re = startX; re <= maxRe; re += step) {
+      if (Math.abs(re) < step * 0.01) continue; // Skip origin
+      const x = toCanvasX(re);
+      ctx.moveTo(x, 0);
+      ctx.lineTo(x, canvasHeight);
+    }
+
+    // Horizontal lines
+    const startY = Math.floor(minIm / step) * step;
+    for (let im = startY; im <= maxIm; im += step) {
+      if (Math.abs(im) < step * 0.01) continue; // Skip origin
+      const y = toCanvasY(im);
+      ctx.moveTo(0, y);
+      ctx.lineTo(canvasWidth, y);
+    }
+    ctx.stroke();
+  }
+
+  // Concentric circles
+  if (gridConfig.circles.enabled && gridConfig.circles.step > 0) {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.beginPath();
+    const step = gridConfig.circles.step;
+    const cornerDistances = [
+      Math.sqrt(minRe * minRe + minIm * minIm),
+      Math.sqrt(maxRe * maxRe + minIm * minIm),
+      Math.sqrt(minRe * minRe + maxIm * maxIm),
+      Math.sqrt(maxRe * maxRe + maxIm * maxIm),
+    ];
+    const maxRadius = Math.max(...cornerDistances) + step;
+
+    for (let r = step; r <= maxRadius; r += step) {
+      const centerX = toCanvasX(0);
+      const centerY = toCanvasY(0);
+      const radiusPixels = r * scale;
+      ctx.moveTo(centerX + radiusPixels, centerY);
+      ctx.arc(centerX, centerY, radiusPixels, 0, 2 * Math.PI);
+    }
+    ctx.stroke();
+  }
+
+  // Rays from origin
+  if (gridConfig.rays.enabled && gridConfig.rays.count > 0) {
+    ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
+    ctx.beginPath();
+    const count = gridConfig.rays.count;
+    const cornerDistances = [
+      Math.sqrt(minRe * minRe + minIm * minIm),
+      Math.sqrt(maxRe * maxRe + minIm * minIm),
+      Math.sqrt(minRe * minRe + maxIm * maxIm),
+      Math.sqrt(maxRe * maxRe + maxIm * maxIm),
+    ];
+    const maxRadius = Math.max(...cornerDistances) * 1.2;
+    const centerX = toCanvasX(0);
+    const centerY = toCanvasY(0);
+
+    for (let i = 0; i < count; i++) {
+      const angle = (2 * Math.PI * i) / count;
+      const endX = toCanvasX(maxRadius * Math.cos(angle));
+      const endY = toCanvasY(maxRadius * Math.sin(angle));
+      ctx.moveTo(centerX, centerY);
+      ctx.lineTo(endX, endY);
+    }
+    ctx.stroke();
+  }
+};
+
 export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, gammaCorrection, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -186,15 +275,40 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       exportCtx.fillStyle = "#0a0a14";
       exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
 
-      // Draw accumulated roots from offscreen canvas
-      exportCtx.drawImage(offscreenCanvas, 0, 0);
+      // Draw accumulated roots from offscreen canvas with gamma correction
+      const currentGamma = gammaCorrectionRef.current;
+      if (currentGamma !== 0) {
+        // Apply gamma correction before drawing
+        const tempCanvas = document.createElement('canvas');
+        tempCanvas.width = offscreenCanvas.width;
+        tempCanvas.height = offscreenCanvas.height;
+        const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+        if (tempCtx) {
+          tempCtx.drawImage(offscreenCanvas, 0, 0);
+          applyGammaCorrection(tempCtx, tempCanvas.width, tempCanvas.height, currentGamma);
+          exportCtx.drawImage(tempCanvas, 0, 0);
+        }
+      } else {
+        exportCtx.drawImage(offscreenCanvas, 0, 0);
+      }
 
-      // Draw coefficient dots as double rings (black + white)
-      // Export uses current view (with pan/zoom applied)
+      // Calculate viewport and coordinate transforms
       const baseScale = Math.min(canvas.width / VIEWPORT_SIZE, canvas.height / VIEWPORT_SIZE);
       const scale = baseScale * zoom;
       const toCanvasX = (re: number) => canvas.width / 2 + (re - offsetX) * scale;
       const toCanvasY = (im: number) => canvas.height / 2 - (im - offsetY) * scale;
+
+      const viewportWidth = VIEWPORT_SIZE / zoom;
+      const viewportHeight = VIEWPORT_SIZE / zoom;
+      const minRe = offsetX - viewportWidth / 2;
+      const maxRe = offsetX + viewportWidth / 2;
+      const minIm = offsetY - viewportHeight / 2;
+      const maxIm = offsetY + viewportHeight / 2;
+
+      // Draw grids
+      drawGrids(exportCtx, gridConfig, minRe, maxRe, minIm, maxIm, scale, toCanvasX, toCanvasY, canvas.width, canvas.height);
+
+      // Draw coefficient dots as double rings (black + white)
       const baseRadius = isMobile ? Math.min(canvas.width, canvas.height) * 0.025 : 8;
 
       coefficients.forEach((coeff) => {
@@ -989,81 +1103,8 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     // Use ref for grid config so we always get latest value during render loop
     const currentGridConfig = gridConfigRef.current;
 
-    // Rectangular grid
-    if (currentGridConfig.rectangular.enabled && currentGridConfig.rectangular.step > 0) {
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-      ctx.beginPath();
-      const step = currentGridConfig.rectangular.step;
-
-      // Vertical lines
-      const startX = Math.floor(minRe / step) * step;
-      for (let re = startX; re <= maxRe; re += step) {
-        if (Math.abs(re) < step * 0.01) continue; // Skip origin (will be drawn as axis)
-        const x = toCanvasX(re);
-        ctx.moveTo(x, 0);
-        ctx.lineTo(x, canvas.height);
-      }
-
-      // Horizontal lines
-      const startY = Math.floor(minIm / step) * step;
-      for (let im = startY; im <= maxIm; im += step) {
-        if (Math.abs(im) < step * 0.01) continue; // Skip origin
-        const y = toCanvasY(im);
-        ctx.moveTo(0, y);
-        ctx.lineTo(canvas.width, y);
-      }
-      ctx.stroke();
-    }
-
-    // Concentric circles
-    if (currentGridConfig.circles.enabled && currentGridConfig.circles.step > 0) {
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-      ctx.beginPath();
-      const step = currentGridConfig.circles.step;
-      // Calculate max radius as distance from origin (0,0) to the farthest viewport corner
-      const cornerDistances = [
-        Math.sqrt(minRe * minRe + minIm * minIm), // bottom-left
-        Math.sqrt(maxRe * maxRe + minIm * minIm), // bottom-right
-        Math.sqrt(minRe * minRe + maxIm * maxIm), // top-left
-        Math.sqrt(maxRe * maxRe + maxIm * maxIm), // top-right
-      ];
-      const maxRadius = Math.max(...cornerDistances) + step;
-
-      for (let r = step; r <= maxRadius; r += step) {
-        const centerX = toCanvasX(0);
-        const centerY = toCanvasY(0);
-        const radiusPixels = r * scale;
-        ctx.moveTo(centerX + radiusPixels, centerY);
-        ctx.arc(centerX, centerY, radiusPixels, 0, 2 * Math.PI);
-      }
-      ctx.stroke();
-    }
-
-    // Rays from origin
-    if (currentGridConfig.rays.enabled && currentGridConfig.rays.count > 0) {
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-      ctx.beginPath();
-      const count = currentGridConfig.rays.count;
-      // Calculate max radius as distance from origin to farthest viewport corner
-      const cornerDistances = [
-        Math.sqrt(minRe * minRe + minIm * minIm),
-        Math.sqrt(maxRe * maxRe + minIm * minIm),
-        Math.sqrt(minRe * minRe + maxIm * maxIm),
-        Math.sqrt(maxRe * maxRe + maxIm * maxIm),
-      ];
-      const maxRadius = Math.max(...cornerDistances) * 1.2;
-      const centerX = toCanvasX(0);
-      const centerY = toCanvasY(0);
-
-      for (let i = 0; i < count; i++) {
-        const angle = (2 * Math.PI * i) / count;
-        const endX = toCanvasX(maxRadius * Math.cos(angle));
-        const endY = toCanvasY(maxRadius * Math.sin(angle));
-        ctx.moveTo(centerX, centerY);
-        ctx.lineTo(endX, endY);
-      }
-      ctx.stroke();
-    }
+    // Draw grids
+    drawGrids(ctx, currentGridConfig, minRe, maxRe, minIm, maxIm, scale, toCanvasX, toCanvasY, canvas.width, canvas.height);
 
     // Draw axes (on top of grid)
     ctx.strokeStyle = "rgba(255, 255, 255, 0.3)";

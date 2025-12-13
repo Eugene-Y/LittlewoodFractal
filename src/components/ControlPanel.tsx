@@ -677,7 +677,7 @@ export const ControlPanel = ({
 
       <div className="space-y-2">
         <Label htmlFor="gamma-slider" className="text-sm font-normal text-foreground">
-          Gamma: {Math.pow(10, gammaCorrection).toFixed(2)}
+          Gamma: {Math.pow(10, gammaCorrection).toFixed(3)}
         </Label>
         <Slider
           id="gamma-slider"
