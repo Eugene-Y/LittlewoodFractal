@@ -23,6 +23,7 @@ interface FractalCanvasProps {
   colorMode: ColorMode;
   blendMode: GlobalCompositeOperation;
   gammaCorrection: number;
+  autoClearCanvas: boolean;
   offsetX: number;
   offsetY: number;
   zoom: number;
@@ -38,6 +39,8 @@ interface FractalCanvasProps {
 
 export interface FractalCanvasRef {
   exportToCanvas: () => HTMLCanvasElement | null;
+  clearCanvas: () => void;
+  restartRender: () => void;
 }
 
 interface ConvergenceStats {
@@ -163,7 +166,7 @@ const drawGrids = (
   }
 };
 
-export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, gammaCorrection, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
+export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({ degree, coefficients, onCoefficientsChange, onCoefficientSelect, onRenderComplete, maxRoots, maxIterations, transparency, colorBandWidth, colorMode, blendMode, gammaCorrection, autoClearCanvas, offsetX, offsetY, zoom, polynomialNeighborRange, gridConfig, samplingConfig, onOffsetChange, onZoomChange, onResetView, onConvergenceStats }, ref) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -331,6 +334,22 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
       });
 
       return exportCanvas;
+    },
+    clearCanvas: () => {
+      const offscreenCanvas = offscreenCanvasRef.current;
+      if (!offscreenCanvas) return;
+
+      const offscreenCtx = offscreenCanvas.getContext('2d', { alpha: true });
+      if (!offscreenCtx) return;
+
+      offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+
+      // Trigger redraw to show cleared canvas
+      redrawCoordinateOverlay();
+    },
+    restartRender: () => {
+      // Trigger render without clearing canvas (respects autoClearCanvas setting)
+      renderFractal();
     }
   }));
 
@@ -541,8 +560,10 @@ export const FractalCanvas = forwardRef<FractalCanvasRef, FractalCanvasProps>(({
     });
     if (!ctx || !offscreenCtx) return;
 
-    // Clear offscreen canvas (transparent background for roots accumulation)
-    offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    // Clear offscreen canvas (transparent background for roots accumulation) - only if autoClearCanvas is enabled
+    if (autoClearCanvas) {
+      offscreenCtx.clearRect(0, 0, offscreenCanvas.width, offscreenCanvas.height);
+    }
 
     // Set composite operation to blend semi-transparent pixels
     offscreenCtx.globalCompositeOperation = blendMode;

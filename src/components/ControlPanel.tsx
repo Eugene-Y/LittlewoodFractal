@@ -34,6 +34,10 @@ interface ControlPanelProps {
   onBlendModeChange: (value: GlobalCompositeOperation) => void;
   gammaCorrection: number;
   onGammaCorrectionChange: (value: number) => void;
+  autoClearCanvas: boolean;
+  onAutoClearCanvasChange: (value: boolean) => void;
+  onClearCanvasNow: () => void;
+  onRestartRender: () => void;
   gridConfig: GridConfig;
   onGridConfigChange: (config: GridConfig) => void;
   samplingConfig: SamplingConfig;
@@ -77,6 +81,10 @@ export const ControlPanel = ({
   onBlendModeChange,
   gammaCorrection,
   onGammaCorrectionChange,
+  autoClearCanvas,
+  onAutoClearCanvasChange,
+  onClearCanvasNow,
+  onRestartRender,
   gridConfig,
   onGridConfigChange,
   samplingConfig,
@@ -688,6 +696,33 @@ export const ControlPanel = ({
           onValueChange={(value) => onGammaCorrectionChange(value[0])}
           className="w-full"
         />
+      </div>
+
+      <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2">
+          <Label htmlFor="auto-clear-switch" className="text-sm font-normal text-foreground whitespace-nowrap">
+            Auto Clear
+          </Label>
+          <Switch
+            id="auto-clear-switch"
+            checked={autoClearCanvas}
+            onCheckedChange={onAutoClearCanvasChange}
+          />
+        </div>
+        <Button
+          onClick={onClearCanvasNow}
+          variant="outline"
+          size="sm"
+        >
+          Clear
+        </Button>
+        <Button
+          onClick={onRestartRender}
+          variant="outline"
+          size="sm"
+        >
+          Restart
+        </Button>
       </div>
 
       {isLandscape && (
